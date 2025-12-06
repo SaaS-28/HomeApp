@@ -350,17 +350,32 @@ export default function App() {
     try {
       const invRaw = await AsyncStorage.getItem('inventory');
       const locRaw = await AsyncStorage.getItem('locations');
+      const invItems: InventoryItem[] = invRaw ? JSON.parse(invRaw) : [];
+      
+      // Convert images to base64 for export
+      const invItemsWithBase64 = await Promise.all(invItems.map(async (item) => {
+        const imagesBase64 = await Promise.all(item.images.map(async (uri) => {
+          try {
+            console.log('Converting image to base64:', uri);
+            const fileData = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+            return { uri, base64: fileData };
+          } catch (e) {
+            console.warn('Could not convert image to base64:', uri, e);
+            return { uri, base64: null };
+          }
+        }));
+        return { ...item, imagesBase64 };
+      }));
+
       const payload = {
         exportedAt: new Date().toISOString(),
-        inventory: invRaw ? JSON.parse(invRaw) : [],
+        inventory: invItemsWithBase64,
         locations: locRaw ? JSON.parse(locRaw) : []
       };
       const json = JSON.stringify(payload, null, 2);
       const filename = `casaapp_export_${Date.now()}.json`;
-      // safe access to cache/document directory (TypeScript-safe)
       const baseCache: string = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || '';
       const tmpUri = `${baseCache}${filename}`;
-      // omit explicit EncodingType — default is UTF-8 in expo-file-system
       await FileSystem.writeAsStringAsync(tmpUri, json);
   
       if (await Sharing.isAvailableAsync()) {
@@ -376,49 +391,172 @@ export default function App() {
 
   const importDatabase = async () => {
     try {
-      // cast to any to avoid TS discrepancies in expo-document-picker types
       const res: any = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
-      if (!res || res.type !== 'success' || !res.uri) return;
-      const pickedUri: string = res.uri;
-      const content = await FileSystem.readAsStringAsync(pickedUri, { encoding: (FileSystem as any).EncodingType.UTF8 });
+      console.log('DocumentPicker result:', res);
+      
+      if (res.canceled === true || !res.assets || res.assets.length === 0) {
+        console.log('Document picker cancelled');
+        return;
+      }
+      
+      const pickedUri: string = res.assets[0].uri;
+      console.log('Picked URI:', pickedUri);
+      
+      let content: string;
+      try {
+        console.log('Attempting direct read...');
+        content = await FileSystem.readAsStringAsync(pickedUri);
+        console.log('Direct read successful, content length:', content.length);
+      } catch (e) {
+        console.warn('Direct read failed, attempting to copy to cache:', e);
+        const filename = `temp_import_${Date.now()}.json`;
+        const cacheDir = (FileSystem as any).cacheDirectory || '';
+        const tempPath = `${cacheDir}${filename}`;
+        
+        console.log('Copying from', pickedUri, 'to', tempPath);
+        
+        try {
+          await FileSystem.copyAsync({ from: pickedUri, to: tempPath });
+          console.log('Copy successful, reading from temp path...');
+          content = await FileSystem.readAsStringAsync(tempPath);
+          console.log('Temp read successful, content length:', content.length);
+          // Clean up temp file after reading
+          await FileSystem.deleteAsync(tempPath, { idempotent: true });
+        } catch (copyErr) {
+          console.error('Copy and read failed:', copyErr);
+          Alert.alert('Errore', 'Impossibile leggere il file JSON selezionato.');
+          return;
+        }
+      }
+
+      console.log('Parsing JSON...');
       const parsed = JSON.parse(content);
-      const inv = Array.isArray(parsed.inventory) ? parsed.inventory : null;
+      let inv = Array.isArray(parsed.inventory) ? parsed.inventory : null;
       const locs = Array.isArray(parsed.locations) ? parsed.locations : null;
-      if (!inv || !locs) { Alert.alert('Importazione', 'File non valido o non compatibile.'); return; }
+      
+      console.log('Parsed inventory items:', inv ? inv.length : 0, 'locations:', locs ? locs.length : 0);
+      
+      if (!inv || !locs) { 
+        Alert.alert('Importazione', 'File non valido o non compatibile.'); 
+        return; 
+      }
+
+      // Restore images from base64 if present
+      const baseDir: string = (FileSystem as any).documentDirectory || '';
+      const imagesDir = `${baseDir}images/`;
+      
+      inv = await Promise.all(inv.map(async (item: any) => {
+        let restoredImages: string[] = [];
+        
+        if (item.imagesBase64 && Array.isArray(item.imagesBase64)) {
+          for (const imgData of item.imagesBase64) {
+            if (imgData.base64) {
+              try {
+                // Ensure images directory exists
+                const dirInfo = await FileSystem.getInfoAsync(imagesDir);
+                if (!dirInfo.exists) {
+                  await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
+                }
+                
+                const filename = `img_imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+                const filePath = `${imagesDir}${filename}`;
+                console.log('Writing base64 image to:', filePath);
+                
+                // Write base64 directly — expo-file-system/legacy handles it correctly
+                await FileSystem.writeAsStringAsync(filePath, imgData.base64, { encoding: 'base64' });
+                restoredImages.push(filePath);
+              } catch (e) {
+                console.warn('Could not restore image from base64:', e);
+              }
+            }
+          }
+        }
+        
+        // Use restored images if available, otherwise fall back to original images array
+        return {
+          ...item,
+          images: restoredImages.length > 0 ? restoredImages : (item.images || []),
+          imagesBase64: undefined // remove base64 data after import
+        };
+      }));
 
       Alert.alert('Importazione DB', 'Scegli modalità di importazione', [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Sostituisci', onPress: async () => {
+            console.log('Replace mode selected');
             await AsyncStorage.setItem('inventory', JSON.stringify(inv));
             await AsyncStorage.setItem('locations', JSON.stringify(locs));
             await loadItems();
             await loadLocations();
-            Alert.alert('Importazione', 'Dati importati (sostituiti).');
+            Alert.alert('Importazione', 'Dati e immagini importati (sostituiti).');
           }
         },
         { text: 'Unisci', onPress: async () => {
-            // merge inventory by title+location (case-insensitive); keep existing items, add new ones not already present
+            console.log('Merge mode selected');
             const existingKeys = new Set(items.map(i => `${i.title.trim().toLowerCase()}||${i.location}`));
             const toAdd = inv.filter((i: InventoryItem) => {
               const key = `${(i.title||'').trim().toLowerCase()}||${i.location}`;
               return !existingKeys.has(key);
             });
             const mergedItems = [...items, ...toAdd];
-            // merge locations
             const locSet = new Set([...locations, ...locs]);
             const mergedLocs = Array.from(locSet);
             await AsyncStorage.setItem('inventory', JSON.stringify(mergedItems));
             await AsyncStorage.setItem('locations', JSON.stringify(mergedLocs));
             await loadItems();
             await loadLocations();
-            Alert.alert('Importazione', `Importazione completata. Aggiunti ${toAdd.length} oggetti e ${mergedLocs.length - locations.length} ubicazioni nuove (se presenti).`);
+            Alert.alert('Importazione', `Importazione completata. Aggiunti ${toAdd.length} oggetti e relative immagini.`);
           }
         }
       ]);
     } catch (e) {
-      console.warn('importDatabase error', e);
-      Alert.alert('Errore', 'Importazione fallita.');
+      console.error('importDatabase outer error:', e);
+      Alert.alert('Errore', `Importazione fallita: ${e instanceof Error ? e.message : String(e)}`);
     }
+  };
+
+  const deleteAllData = async () => {
+    Alert.alert(
+      'Elimina tutto',
+      'Sei sicuro di voler eliminare TUTTI gli oggetti, le immagini e le ubicazioni? Questa azione non può essere annullata.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Elimina tutto',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete all items
+              await AsyncStorage.setItem('inventory', JSON.stringify([]));
+              
+              // Delete all locations
+              await AsyncStorage.setItem('locations', JSON.stringify([]));
+              
+              // Delete all image files from images directory
+              const baseDir: string = (FileSystem as any).documentDirectory || '';
+              const imagesDir = `${baseDir}images/`;
+              try {
+                const dirInfo = await FileSystem.getInfoAsync(imagesDir);
+                if (dirInfo.exists) {
+                  await FileSystem.deleteAsync(imagesDir, { idempotent: true });
+                }
+              } catch (e) {
+                console.warn('Could not delete images directory:', e);
+              }
+              
+              // Reload to reflect empty state
+              await loadItems();
+              await loadLocations();
+              
+              Alert.alert('Eliminazione completata', 'Tutti gli oggetti, le immagini e le ubicazioni sono stati eliminati.');
+            } catch (e) {
+              console.error('deleteAllData error:', e);
+              Alert.alert('Errore', 'Impossibile eliminare i dati.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const openModalForNewItem = () => {
@@ -918,6 +1056,9 @@ export default function App() {
             <View style={{ marginTop: 10 }}>
                 <Button title="Importa DB (seleziona file JSON)" onPress={importDatabase} />
             </View>
+            <View style={{ marginTop: 10 }}>
+                <Button title="Elimina tutto" color="red" onPress={deleteAllData} />
+            </View>
             <View style={{ marginTop: 20 }}>
               <Button title="Chiudi" onPress={() => setSettingsVisible(false)} />
             </View>
@@ -1045,7 +1186,7 @@ export default function App() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 }}>
                 {editingItem ? (
                   <>
-                    <View style={{ flex: 1, marginRight: 6 }}><Button title="Salva Modifiche" onPress={confirmAndSaveItem} /></View>
+                    <View style={{ flex: 1, marginRight: 6 }}><Button title="Salva" onPress={confirmAndSaveItem} /></View>
                     <View style={{ flex: 1, marginHorizontal: 6 }}><Button title="Elimina" color="red" onPress={() => { if (editingItem) confirmAndDeleteItem(editingItem.id); }} /></View>
                     <View style={{ flex: 1, marginLeft: 6 }}><Button title="Annulla" color="gray" onPress={confirmCancel} /></View>
                   </>
