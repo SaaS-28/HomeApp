@@ -1,0 +1,50 @@
+{
+    "name": "CasaApp Container",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "args": {
+            "USERNAME": "user"
+        }
+    },
+    "runArgs": [
+        "--name",
+        "casa-app-container"
+    ],
+    "workspaceFolder": "/workspace",
+    "remoteUser": "user",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+        "source=${localEnv:HOME}/.ssh,target=/home/user/.ssh,type=bind,consistency=cached"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "eamodio.gitlens",
+                "ms-vscode.vscode-typescript-next",
+                "esbenp.prettier-vscode",
+                "christian-kohler.path-intellisense",
+                "dbaeumer.vscode-eslint",
+                "yoavbls.pretty-ts-errors",
+                "mhutchie.git-graph",
+                "dsznajder.es7-react-js-snippets"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.fixAll.eslint": "explicit"
+                },
+                "emmet.includeLanguages": {
+                    "javascript": "javascriptreact"
+                },
+                "files.associations": {
+                    "*.jsx": "javascriptreact",
+                    "*.tsx": "typescriptreact"
+                }
+            }
+        }
+    },
+    "shutdownAction": "stopContainer",
+    "postCreateCommand": "chmod +x scripts/*.sh && scripts/post_create_command.sh user",
+    "postStartCommand": "scripts/post_start_command.sh"
+}

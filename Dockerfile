@@ -1,23 +1,36 @@
-FROM node:18-bullseye
+FROM node:20-bullseye
 
-WORKDIR /app
+# Arguments for user creation
+ARG USERNAME=user
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+# Set the working directory
+WORKDIR /workspace
 
-# install expo cli
-RUN npm install -g expo-cli
+# Update packages and install system dependencies
+RUN apt-get update && \
+    apt-get install -y git curl ca-certificates sudo && \
+    rm -rf /var/lib/apt/lists/*
 
-# copy manifests for cached install
-COPY package.json package-lock.json* yarn.lock* ./
+# Install pnpm globally
+RUN npm install -g pnpm
 
-RUN if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi
+# Install Expo CLI globally
+RUN pnpm add -g expo-cli
 
-# copy app
-COPY . .
+# Create a non-root user with sudo access
+RUN groupadd --gid $USER_GID $USERNAME && \
+    useradd --uid $USER_UID --gid $USER_GID -s /bin/bash -m $USERNAME && \
+    adduser $USERNAME sudo && \
+    echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME && \
+    chmod 0440 /etc/sudoers.d/$USERNAME
 
-EXPOSE 19000 19001 19002 8081
+# Switch to the new user
+USER $USERNAME
 
-# default dev start; use --lan for LAN (change in compose if desired)
-CMD ["expo", "start", "--tunnel", "--non-interactive"]
+# Create a default .gitconfig file
+RUN echo "[user]\n\tname = samuel.onidi\n\temail = samyoni.so@gmail.com" > ~/.gitconfig
+
+# Command to keep the container running
+CMD ["tail", "-f", "/dev/null"]
