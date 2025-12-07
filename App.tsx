@@ -37,11 +37,9 @@ export default function App() {
   const [newImages, setNewImages] = useState<string[]>([]);
 
   const [locations, setLocations] = useState<string[]>([]);
-  const [addingLocation, setAddingLocation] = useState(false);
-  const [newLocationName, setNewLocationName] = useState('');
-
-  const [editingLocation, setEditingLocation] = useState<string | null>(null);
-  const [editingLocationNewName, setEditingLocationNewName] = useState('');
+  
+  // Location dropdown state
+  const [locationDropdownVisible, setLocationDropdownVisible] = useState(false);
 
   const [adjustmentMode, setAdjustmentMode] = useState<'add' | 'remove' | null>(null);
   const [adjustmentValue, setAdjustmentValue] = useState('');
@@ -51,6 +49,12 @@ export default function App() {
   const [selectedLocationForMgr, setSelectedLocationForMgr] = useState<string | null>(null);
   const [mgrSelectedItemIds, setMgrSelectedItemIds] = useState<string[]>([]);
   const [mgrTargetLocation, setMgrTargetLocation] = useState<string | null>(null);
+  
+  // Location Manager - Add/Edit states
+  const [addingLocationInMgr, setAddingLocationInMgr] = useState(false);
+  const [newLocationNameInMgr, setNewLocationNameInMgr] = useState('');
+  const [editingLocationInMgr, setEditingLocationInMgr] = useState<string | null>(null);
+  const [editingLocationNewNameInMgr, setEditingLocationNewNameInMgr] = useState('');
 
   // Settings / debug mode
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -63,9 +67,9 @@ export default function App() {
   // Duplicate selection modal states (used both for create and reassign)
   const [duplicatePickerVisible, setDuplicatePickerVisible] = useState(false);
   const [duplicateCandidates, setDuplicateCandidates] = useState<InventoryItem[]>([]);
-  const [duplicateContextNewQuantity, setDuplicateContextNewQuantity] = useState(0); // store newQuantity to add for create flow
+  const [duplicateContextNewQuantity, setDuplicateContextNewQuantity] = useState(0);
   const [duplicateContextMode, setDuplicateContextMode] = useState<'create'|'reassign'|null>(null);
-  const [duplicateContextMovingItemId, setDuplicateContextMovingItemId] = useState<string | null>(null); // for reassign
+  const [duplicateContextMovingItemId, setDuplicateContextMovingItemId] = useState<string | null>(null);
 
   const [imageToView, setImageToView] = useState<string | null>(null);
   const screenWidth = Dimensions.get('window').width;
@@ -115,7 +119,6 @@ export default function App() {
       try {
         const pickedUri = result.assets[0].uri;
         const savedUri = await compressAndSaveImage(pickedUri, { maxWidth: 1280, maxSizeKB: 250 });
-        // savedUri è ora un file in DocumentDirectory dell'app (file://...)
         setNewImages(prev => [...prev, savedUri]);
       } catch (e) {
         console.error('Errore compress/save image', e);
@@ -124,13 +127,6 @@ export default function App() {
     }
   };
 
-  /**
-   * Compress + save image where possible.
-   * - If documentDirectory/cacheDirectory available -> saves a persistent copy in <base>/images/
-   * - Otherwise returns the temporary URI returned by ImageManipulator (usable but non-persistente in alcuni ambienti)
-   *
-   * opts: { maxWidth?: number; maxSizeKB?: number }
-   */
   const compressAndSaveImage = async (
     uri: string,
     opts: { maxWidth?: number; maxSizeKB?: number } = {}
@@ -138,7 +134,6 @@ export default function App() {
     const maxWidth = opts.maxWidth ?? 1280;
     const targetKB = opts.maxSizeKB ?? 250;
 
-    // Safely read size (type-guard)
     const getSizeKB = async (furi: string): Promise<number | null> => {
       try {
         const info = await FileSystem.getInfoAsync(furi);
@@ -151,18 +146,15 @@ export default function App() {
       }
     };
 
-    // prefer documentDirectory, fallback cacheDirectory; these can be null in some runtimes (es. web)
     const baseDir: string | null =
       (FileSystem as any).documentDirectory ||
       (FileSystem as any).cacheDirectory ||
       null;
 
-    // directory where we'd like to save images if possible
     const imagesDir = baseDir ? `${baseDir}images/` : null;
     const filename = `img_${Date.now()}.jpg`;
     const finalPath = imagesDir ? `${imagesDir}${filename}` : null;
 
-    // Ensure images directory exists if we can write to baseDir
     if (imagesDir) {
       try {
         const dirInfo = await FileSystem.getInfoAsync(imagesDir);
@@ -171,7 +163,6 @@ export default function App() {
         }
       } catch (e) {
         console.warn('Warning: creazione directory immagini non riuscita', e);
-        // fallthrough: continueremo comunque provando a salvare/ritornare il tmpUri
       }
     }
 
@@ -181,7 +172,6 @@ export default function App() {
 
     while (quality >= minQuality) {
       try {
-        // manipola immagine (restituisce un file temporaneo, tipicamente in cache)
         const manipResult = await ImageManipulator.manipulateAsync(
           uri,
           [{ resize: { width: maxWidth } }],
@@ -190,25 +180,20 @@ export default function App() {
 
         const tmpUri = manipResult.uri;
 
-        // Se non abbiamo una directory persistente, ritorniamo il tmpUri (questo evita il throw)
         if (!finalPath) {
-          // Proviamo comunque a controllare dimensione e, se necessario, accettare tmpUri
           const tmpSize = await getSizeKB(tmpUri);
           if (tmpSize !== null && tmpSize <= targetKB) return tmpUri;
-          // Se è troppo grande, proviamo a diminuire quality e ripetere; ma non possiamo spostare il file in posizione "finale"
           lastSaved = tmpUri;
           quality -= 0.15;
           continue;
         }
 
-        // Proviamo a muovere/copiare il tmpUri in finalPath (persistente)
         try {
           await FileSystem.moveAsync({ from: tmpUri, to: finalPath });
         } catch (moveErr) {
           try {
             await FileSystem.copyAsync({ from: tmpUri, to: finalPath });
           } catch (copyErr) {
-            // fallback: downloadAsync (utile per alcuni schemi)
             await FileSystem.downloadAsync(tmpUri, finalPath);
           }
         }
@@ -218,32 +203,26 @@ export default function App() {
         if (sizeKB === null) return finalPath;
         if (sizeKB <= targetKB) return finalPath;
 
-        // troppo grande -> riduci quality e riprova (sovrascrive finalPath)
         quality -= 0.15;
       } catch (err) {
         console.warn('compressAndSaveImage inner error:', err);
-        // fallback finale: se abbiamo finalPath proviamo a downloadAsync(uri, finalPath)
         if (finalPath) {
           try {
             await FileSystem.downloadAsync(uri, finalPath);
             return finalPath;
           } catch (downloadErr) {
-            // se anche il download fallisce, non scartare tutto: se abbiamo un tmp salvato precedentemente, ritorna quello
             if (lastSaved) return lastSaved;
             throw err;
           }
         } else {
-          // non abbiamo finalPath: ritorniamo ultimo tmp se c'è, altrimenti rilanciamo
           if (lastSaved) return lastSaved;
           throw err;
         }
       }
     }
 
-    // se siamo usciti dal loop e abbiamo qualcosa -> ritorna l'ultimo file (persistente o temporaneo)
     if (lastSaved) return lastSaved;
 
-    // ultima risorsa: se abbiamo finalPath proviamo download, altrimenti rilanciamo errore
     if (finalPath) {
       await FileSystem.downloadAsync(uri, finalPath);
       return finalPath;
@@ -253,7 +232,6 @@ export default function App() {
   };
 
   const getImageDebugInfo = async (uri: string) : Promise<{ exists: boolean; uri: string; sizeKB: number | null; persisted: boolean }> => {
-    // type-safe getInfo
     let info: any = null;
     try {
       info = await FileSystem.getInfoAsync(uri);
@@ -295,12 +273,9 @@ export default function App() {
           text: 'Rimuovi',
           style: 'destructive',
           onPress: async () => {
-            // 1️⃣ Rimuove l’immagine dalla lista (UI)
             setNewImages(prev => prev.filter(u => u !== uri));
-
-            // 2️⃣ Prova a cancellare il file locale collegato
             try {
-              await deleteLocalImage(uri); // <-- funzione che ti ho dato prima
+              await deleteLocalImage(uri);
             } catch (e) {
               console.warn('Errore cancellazione file locale:', e);
             }
@@ -333,7 +308,6 @@ export default function App() {
         { text: 'Elimina file locale', onPress: async () => {
             const ok = await deleteLocalImage(uri);
             if (ok) {
-              // rimuovi anche dalla UI se presente nelle nuove immagini
               setNewImages(prev => prev.filter(u => u !== uri));
               Alert.alert('File locale eliminato', 'Il file locale è stato eliminato.');
             } else {
@@ -352,7 +326,6 @@ export default function App() {
       const locRaw = await AsyncStorage.getItem('locations');
       const invItems: InventoryItem[] = invRaw ? JSON.parse(invRaw) : [];
       
-      // Convert images to base64 for export
       const invItemsWithBase64 = await Promise.all(invItems.map(async (item) => {
         const imagesBase64 = await Promise.all(item.images.map(async (uri) => {
           try {
@@ -420,7 +393,6 @@ export default function App() {
           console.log('Copy successful, reading from temp path...');
           content = await FileSystem.readAsStringAsync(tempPath);
           console.log('Temp read successful, content length:', content.length);
-          // Clean up temp file after reading
           await FileSystem.deleteAsync(tempPath, { idempotent: true });
         } catch (copyErr) {
           console.error('Copy and read failed:', copyErr);
@@ -441,7 +413,6 @@ export default function App() {
         return; 
       }
 
-      // Restore images from base64 if present
       const baseDir: string = (FileSystem as any).documentDirectory || '';
       const imagesDir = `${baseDir}images/`;
       
@@ -452,7 +423,6 @@ export default function App() {
           for (const imgData of item.imagesBase64) {
             if (imgData.base64) {
               try {
-                // Ensure images directory exists
                 const dirInfo = await FileSystem.getInfoAsync(imagesDir);
                 if (!dirInfo.exists) {
                   await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
@@ -462,7 +432,6 @@ export default function App() {
                 const filePath = `${imagesDir}${filename}`;
                 console.log('Writing base64 image to:', filePath);
                 
-                // Write base64 directly — expo-file-system/legacy handles it correctly
                 await FileSystem.writeAsStringAsync(filePath, imgData.base64, { encoding: 'base64' });
                 restoredImages.push(filePath);
               } catch (e) {
@@ -472,11 +441,10 @@ export default function App() {
           }
         }
         
-        // Use restored images if available, otherwise fall back to original images array
         return {
           ...item,
           images: restoredImages.length > 0 ? restoredImages : (item.images || []),
-          imagesBase64: undefined // remove base64 data after import
+          imagesBase64: undefined
         };
       }));
 
@@ -526,13 +494,9 @@ export default function App() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Delete all items
               await AsyncStorage.setItem('inventory', JSON.stringify([]));
-              
-              // Delete all locations
               await AsyncStorage.setItem('locations', JSON.stringify([]));
               
-              // Delete all image files from images directory
               const baseDir: string = (FileSystem as any).documentDirectory || '';
               const imagesDir = `${baseDir}images/`;
               try {
@@ -544,7 +508,6 @@ export default function App() {
                 console.warn('Could not delete images directory:', e);
               }
               
-              // Reload to reflect empty state
               await loadItems();
               await loadLocations();
               
@@ -566,8 +529,6 @@ export default function App() {
     setNewLocation('');
     setNewDescription('');
     setNewImages([]);
-    setAddingLocation(false);
-    setNewLocationName('');
     setAdjustmentMode(null);
     setAdjustmentValue('');
     setOriginalSnapshot(null);
@@ -581,8 +542,6 @@ export default function App() {
     setNewLocation(item.location);
     setNewDescription(item.description);
     setNewImages(item.images);
-    setAddingLocation(false);
-    setNewLocationName('');
     setAdjustmentMode(null);
     setAdjustmentValue('');
     setOriginalSnapshot({ title: item.title, quantity: item.quantity.toString(), location: item.location, description: item.description, images: item.images.slice() });
@@ -597,14 +556,11 @@ export default function App() {
     setNewLocation('');
     setNewDescription('');
     setNewImages([]);
-    setAddingLocation(false);
-    setNewLocationName('');
     setAdjustmentMode(null);
     setAdjustmentValue('');
     setImageToView(null);
     setOriginalSnapshot(null);
-    setEditingLocation(null);
-    setEditingLocationNewName('');
+    setLocationDropdownVisible(false);
   };
 
   const hasUnsavedChanges = () => {
@@ -652,7 +608,6 @@ export default function App() {
       const titleLower = newTitle.trim().toLowerCase();
       const duplicatesAnyLocation = items.filter(i => i.title.trim().toLowerCase() === titleLower);
 
-      // If there are NO duplicates, create normally
       if (duplicatesAnyLocation.length === 0) {
         const newItem: InventoryItem = {
           id: Date.now().toString(),
@@ -668,7 +623,6 @@ export default function App() {
         return;
       }
 
-      // If exactly one existing match -> offer aggregate OR create anyway
       if (duplicatesAnyLocation.length === 1) {
         const target = duplicatesAnyLocation[0];
         Alert.alert(
@@ -702,12 +656,10 @@ export default function App() {
         return;
       }
 
-      // If more than one existing match -> force the user to choose (open picker)
       if (duplicatesAnyLocation.length > 1) {
         setDuplicateCandidates(duplicatesAnyLocation);
         setDuplicateContextNewQuantity(parseInt(newQuantity));
         setDuplicateContextMode('create');
-        // close create modal and open picker
         setModalVisible(false);
         setTimeout(() => setDuplicatePickerVisible(true), 200);
         return;
@@ -717,7 +669,6 @@ export default function App() {
 
   const onDuplicateCandidatePress = (candidate: InventoryItem) => {
     if (duplicateContextMode === 'create') {
-      // conferma aggiunta quantità al candidato selezionato (create flow)
       Alert.alert(
         'Conferma aggiunta quantità',
         `Vuoi aggiungere ${duplicateContextNewQuantity} alla quantità dell'oggetto "${candidate.title}" (${candidate.location})? Quantità attuale: ${candidate.quantity}`,
@@ -739,7 +690,6 @@ export default function App() {
     }
 
     if (duplicateContextMode === 'reassign') {
-      // Reassign flow: aggregate this moving item into selected candidate
       const movingId = duplicateContextMovingItemId;
       if (!movingId) return;
       const movingItem = items.find(i => i.id === movingId);
@@ -751,11 +701,9 @@ export default function App() {
         [
           { text: 'Annulla', style: 'cancel' },
           { text: 'Conferma', onPress: async () => {
-            // add quantity to candidate and remove moving item
             const updated = items.map(i => i.id === candidate.id ? { ...i, quantity: i.quantity + movingItem.quantity } : i).filter(i => i.id !== movingId);
             await saveItems(updated);
             Alert.alert('Operazione completata', `Quantità aggiunta a "${candidate.title}". Oggetto spostato rimosso.`);
-            // cleanup and proceed to next in queue
             setDuplicatePickerVisible(false);
             setDuplicateCandidates([]);
             setDuplicateContextMode(null);
@@ -781,13 +729,24 @@ export default function App() {
     if (itemToDelete) Alert.alert('Eliminazione Oggetto', `Oggetto "${itemToDelete.title}" eliminato con successo.`);
   };
 
-  const addLocation = async (loc: string) => {
-    if (!loc) return;
-    if (locations.includes(loc)) { Alert.alert('Ubicazione già presente','Attenzione, l\'ubicazione che stai cercando di inserire esiste già, vuoi selezionarla?',[{ text: 'No', style: 'cancel' },{ text: 'Sì', onPress: () => setNewLocation(loc) }]); return; }
-    const newLocs = [...locations, loc]; await saveLocations(newLocs); setNewLocation(loc);
+  // Location management functions (now in Location Manager modal)
+  const addLocationInMgr = async () => {
+    const loc = newLocationNameInMgr.trim();
+    if (!loc) {
+      Alert.alert('Nome non valido', 'Inserisci un nome valido per l\'ubicazione.');
+      return;
+    }
+    if (locations.includes(loc)) {
+      Alert.alert('Ubicazione già presente', 'Questa ubicazione esiste già.');
+      return;
+    }
+    const newLocs = [...locations, loc];
+    await saveLocations(newLocs);
+    setNewLocationNameInMgr('');
+    setAddingLocationInMgr(false);
+    Alert.alert('Ubicazione creata', `Ubicazione "${loc}" aggiunta con successo.`);
   };
 
-  // delete only if empty
   const confirmAndDeleteLocation = (loc: string) => {
     const used = items.some(it => it.location === loc);
     if (used) {
@@ -795,17 +754,18 @@ export default function App() {
       return;
     }
     Alert.alert('Conferma eliminazione', `Eliminare l'ubicazione "${loc}"?`, [
-      { text: 'Annulla', style: 'cancel' }, { text: 'Elimina', style: 'destructive', onPress: async () => { await deleteLocation(loc); } }
+      { text: 'Annulla', style: 'cancel' }, 
+      { text: 'Elimina', style: 'destructive', onPress: async () => { await deleteLocation(loc); } }
     ]);
   };
 
   const deleteLocation = async (loc: string) => {
     const updatedLocations = locations.filter(l => l !== loc);
     await saveLocations(updatedLocations);
-    // ensure no item keeps it (shouldn't) -> clear
     const updatedItems = items.map(item => item.location === loc ? { ...item, location: '' } : item);
     await saveItems(updatedItems);
     if (newLocation === loc) setNewLocation('');
+    if (selectedLocationForMgr === loc) setSelectedLocationForMgr(null);
     Alert.alert('Eliminazione Ubicazione', `Ubicazione "${loc}" eliminata correttamente.`);
   };
 
@@ -816,21 +776,56 @@ export default function App() {
     const newQty = adjustmentMode === 'add' ? current + adj : current - adj;
     if (newQty < 0) { Alert.alert('Errore quantità', 'La quantità risultante sarebbe negativa. Inserisci un valore più piccolo.'); return; }
     Alert.alert('Conferma modifica quantità', `Sei sicuro di voler ${adjustmentMode === 'add' ? 'aggiungere' : 'rimuovere'} ${adj} alla quantità (attuale: ${current})? Risultato: ${newQty}`, [
-      { text: 'Annulla', style: 'cancel' }, { text: 'Conferma', onPress: () => { setNewQuantity(newQty.toString()); setAdjustmentMode(null); setAdjustmentValue(''); } }
+      { text: 'Annulla', style: 'cancel' }, 
+      { text: 'Conferma', onPress: () => { setNewQuantity(newQty.toString()); setAdjustmentMode(null); setAdjustmentValue(''); } }
     ]);
   };
 
-  const confirmRenameLocation = (oldName: string, newName: string) => {
-    if (!newName || newName.trim() === '') { Alert.alert('Nome non valido','Inserisci un nome valido per l\'ubicazione.'); return; }
-    if (locations.includes(newName) && newName !== oldName) { Alert.alert('Nome già esistente','Esiste già un\'altra ubicazione con questo nome. Scegli un nome diverso.'); return; }
-    Alert.alert('Conferma rinomina ubicazione', `Rinominare "${oldName}" in "${newName}"? Tutti gli oggetti assegnati a "${oldName}" verranno aggiornati.`, [
-      { text: 'Annulla', style: 'cancel' }, { text: 'Conferma', onPress: async () => {
-        const updatedLocations = locations.map(l => l === oldName ? newName : l); await saveLocations(updatedLocations);
-        const updatedItems = items.map(item => item.location === oldName ? { ...item, location: newName } : item); await saveItems(updatedItems);
-        if (newLocation === oldName) setNewLocation(newName);
-        setEditingLocation(null); setEditingLocationNewName(''); Alert.alert('Rinomina completata', `"${oldName}" rinominata in "${newName}".`);
-      } }
-    ]);
+  const confirmRenameLocationInMgr = () => {
+    const oldName = editingLocationInMgr;
+    const newName = editingLocationNewNameInMgr.trim();
+    
+    if (!oldName || !newName) {
+      Alert.alert('Nome non valido', 'Inserisci un nome valido per l\'ubicazione.');
+      return;
+    }
+    
+    if (newName === oldName) {
+      setEditingLocationInMgr(null);
+      setEditingLocationNewNameInMgr('');
+      return;
+    }
+    
+    if (locations.includes(newName)) {
+      Alert.alert('Nome già esistente', 'Esiste già un\'altra ubicazione con questo nome. Scegli un nome diverso.');
+      return;
+    }
+    
+    Alert.alert(
+      'Conferma rinomina ubicazione',
+      `Rinominare "${oldName}" in "${newName}"? Tutti gli oggetti assegnati a "${oldName}" verranno aggiornati.`,
+      [
+        { text: 'Annulla', style: 'cancel' },
+        { 
+          text: 'Conferma',
+          onPress: async () => {
+            const updatedLocations = locations.map(l => l === oldName ? newName : l);
+            await saveLocations(updatedLocations);
+            
+            const updatedItems = items.map(item => item.location === oldName ? { ...item, location: newName } : item);
+            await saveItems(updatedItems);
+            
+            if (newLocation === oldName) setNewLocation(newName);
+            if (selectedLocationForMgr === oldName) setSelectedLocationForMgr(newName);
+            
+            setEditingLocationInMgr(null);
+            setEditingLocationNewNameInMgr('');
+            
+            Alert.alert('Rinomina completata', `"${oldName}" rinominata in "${newName}".`);
+          }
+        }
+      ]
+    );
   };
 
   // --- Location Manager functions ---
@@ -838,6 +833,10 @@ export default function App() {
     setSelectedLocationForMgr(locations.length > 0 ? locations[0] : null);
     setMgrSelectedItemIds([]);
     setMgrTargetLocation(null);
+    setAddingLocationInMgr(false);
+    setNewLocationNameInMgr('');
+    setEditingLocationInMgr(null);
+    setEditingLocationNewNameInMgr('');
     setLocationMgrVisible(true);
   };
 
@@ -851,66 +850,53 @@ export default function App() {
     if (mgrTargetLocation === selectedLocationForMgr) { Alert.alert('Stessa ubicazione','La destinazione è identica all\'origine.'); return; }
     if (mgrSelectedItemIds.length === 0) { Alert.alert('Nessun oggetto selezionato','Seleziona almeno un oggetto da riassegnare.'); return; }
 
-    // build queue and start processing sequentially
     const queue = mgrSelectedItemIds.slice();
     const target = mgrTargetLocation;
     setReassignQueue(queue);
     setReassignTarget(target);
-    // close location manager UI while we process
     setLocationMgrVisible(false);
-    // start processing using explicit params (avoid race on state updates)
     setTimeout(() => processNextReassign(queue, target), 200);
   };
 
   const processNextReassign = async (queueParam?: string[], targetParam?: string | null) => {
-    // use params if provided, otherwise fall back to state
     let queue = Array.isArray(queueParam) ? queueParam.slice() : reassignQueue.slice();
     const target = typeof targetParam !== 'undefined' ? targetParam : reassignTarget;
 
-    // clear selected ids in UI
     setMgrSelectedItemIds([]);
 
     if (queue.length === 0) {
-      // done
       setReassignTarget(null);
       setReassignQueue([]);
       return;
     }
 
-    const currentId = queue.shift()!; // take first
-    // persist updated queue to state so cancellations/continuations work
+    const currentId = queue.shift()!;
     setReassignQueue(queue);
 
     const movingItem = items.find(i => i.id === currentId);
     if (!movingItem || !target) {
-      // proceed to next
-      // small delay to avoid callstack depth
       setTimeout(() => processNextReassign(queue, target), 50);
       return;
     }
 
-    // check for same-title items in target location (excluding the moving item itself)
     const titleLower = movingItem.title.trim().toLowerCase();
     const duplicatesInTarget = items.filter(i => i.title.trim().toLowerCase() === titleLower && i.location === target && i.id !== movingItem.id);
 
     if (duplicatesInTarget.length === 0) {
-      // safe to move
       const updated = items.map(i => i.id === movingItem.id ? { ...i, location: target } : i);
       await saveItems(updated);
       Alert.alert('Riassegnazione completata', `"${movingItem.title}" spostato in "${target}".`);
-      // after move, continue with next
       setTimeout(() => processNextReassign(queue, target), 50);
       return;
     }
 
     if (duplicatesInTarget.length === 1) {
-      // offer aggregate or move anyway
       const targetExisting = duplicatesInTarget[0];
       Alert.alert(
         'Oggetto con stesso titolo presente',
         `In "${target}" esiste già un oggetto "${movingItem.title}" (qta: ${targetExisting.quantity}). Vuoi aggregare la quantità del pezzo spostato (${movingItem.quantity}) o spostare comunque creando un duplicato?`,
         [
-          { text: 'Annulla', style: 'cancel', onPress: () => { /* user cancelled this reassign -> skip and continue */ setTimeout(() => processNextReassign(queue, target), 50); } },
+          { text: 'Annulla', style: 'cancel', onPress: () => { setTimeout(() => processNextReassign(queue, target), 50); } },
           { text: `Aggrega a ${target}`, onPress: async () => {
               const updated = items.map(i => i.id === targetExisting.id ? { ...i, quantity: i.quantity + movingItem.quantity } : i).filter(i => i.id !== movingItem.id);
               await saveItems(updated);
@@ -930,26 +916,30 @@ export default function App() {
       return;
     }
 
-    // duplicatesInTarget.length > 1 -> force user to choose which to aggregate
     setDuplicateCandidates(duplicatesInTarget);
     setDuplicateContextMode('reassign');
     setDuplicateContextMovingItemId(movingItem.id);
-    // open picker to choose target to aggregate into
     setTimeout(() => setDuplicatePickerVisible(true), 200);
     return;
   };
 
-  // called after a candidate was used for aggregation reassign; processNextReassign() is invoked there
-
   // --- UI and rendering ---
   useEffect(() => {
-    const filtered = items.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.location.toLowerCase().includes(searchQuery.toLowerCase()) || item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filtered = items.filter(item => 
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      item.location.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      item.description.toLowerCase().includes(searchQuery.toLowerCase())
+    );
     setFilteredItems(filtered);
   }, [searchQuery, items]);
 
   const renderItem = ({ item }: { item: InventoryItem }) => (
     <TouchableOpacity style={styles.itemContainer} onPress={() => openModalForEditItem(item)}>
-      <TouchableOpacity onPress={() => openModalForEditItem(item)} onLongPress={() => { if (debugMode && item.images[0]) showImageDebugActions(item.images[0]); }} delayLongPress={2000}>
+      <TouchableOpacity 
+        onPress={() => openModalForEditItem(item)} 
+        onLongPress={() => { if (debugMode && item.images[0]) showImageDebugActions(item.images[0]); }} 
+        delayLongPress={2000}
+      >
         <Image source={{ uri: item.images[0] }} style={styles.itemImageSmall} />
       </TouchableOpacity>
       <View style={styles.itemDetails}>
@@ -964,105 +954,388 @@ export default function App() {
   return (
     <View style={styles.container}>
       <View style={styles.searchContainer}>
-        <TextInput style={styles.searchInput} placeholder="Cerca oggetto, ubicazione o descrizione..." value={searchQuery} onChangeText={setSearchQuery} />
+        <TextInput 
+          style={styles.searchInput} 
+          placeholder="Cerca oggetto, ubicazione o descrizione..." 
+          value={searchQuery} 
+          onChangeText={setSearchQuery} 
+        />
       </View>
 
-      <FlatList data={filteredItems} renderItem={renderItem} keyExtractor={item => item.id} ListEmptyComponent={items.length > 0 ? (<View style={styles.emptyContainer}><Text>Nessun risultato trovato</Text></View>) : null} />
+      <FlatList 
+        data={filteredItems} 
+        renderItem={renderItem} 
+        keyExtractor={item => item.id} 
+        ListEmptyComponent={items.length > 0 ? (
+          <View style={styles.emptyContainer}><Text>Nessun risultato trovato</Text></View>
+        ) : null} 
+      />
 
-      {/* floating buttons container (location manager + add item) */}
+      {/* floating buttons container */}
       <View style={styles.fabContainer}>
-        <TouchableOpacity style={[styles.fab, { backgroundColor: '#8E8E93', marginRight: 10 }]} onPress={() => setSettingsVisible(true)}>
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: '#8E8E93', marginRight: 10 }]} 
+          onPress={() => setSettingsVisible(true)}
+        >
           <Text style={styles.addButtonText}>Impostazioni</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.fab, { backgroundColor: '#34C759', marginRight: 10 }]} onPress={openLocationManager}>
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: '#34C759', marginRight: 10 }]} 
+          onPress={openLocationManager}
+        >
           <Text style={styles.addButtonText}>Gestione Ubicazioni</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.fab, { backgroundColor: '#007AFF' }]} onPress={openModalForNewItem}>
+        <TouchableOpacity 
+          style={[styles.fab, { backgroundColor: '#007AFF' }]} 
+          onPress={openModalForNewItem}
+        >
           <Text style={styles.addButtonText}>+ Aggiungi nuovo oggetto</Text>
         </TouchableOpacity>
       </View>
 
       {/* Location Manager Modal */}
       <Modal visible={locationMgrVisible} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ padding: 20, flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Gestione Ubicazioni</Text>
-
-            <Text style={{ marginBottom: 6 }}>Seleziona Ubicazione:</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 }}>
-              {locations.length === 0 && <Text>Nessuna ubicazione disponibile.</Text>}
-              {locations.map(loc => (
-                <TouchableOpacity key={loc} style={[styles.locationChip, selectedLocationForMgr === loc && styles.locationChipActive]} onPress={() => { setSelectedLocationForMgr(loc); setMgrSelectedItemIds([]); }}>
-                  <Text style={{ color: selectedLocationForMgr === loc ? '#fff' : '#000' }}>{loc}</Text>
-                </TouchableOpacity>
-              ))}
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+            {/* Header */}
+            <View style={{ marginBottom: 30, alignItems: 'center' }}>
+              <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#333', marginBottom: 8 }}>Gestione Ubicazioni</Text>
+              <View style={{ width: 60, height: 4, backgroundColor: '#34C759', borderRadius: 2 }} />
             </View>
 
-            <Text style={{ marginBottom: 6 }}>Oggetti in: {selectedLocationForMgr || '-'}</Text>
-            <ScrollView style={{ flex: 1, marginBottom: 12 }}>
-              {selectedLocationForMgr ? (
-                items.filter(it => it.location === selectedLocationForMgr).map(it => (
-                  <TouchableOpacity key={it.id} style={styles.mgrItemRow} onPress={() => toggleMgrSelectItem(it.id)}>
-                    <View style={{ width: 24, height: 24, borderRadius: 4, borderWidth: 1, borderColor: '#888', justifyContent: 'center', alignItems: 'center', marginRight: 8 }}>{mgrSelectedItemIds.includes(it.id) && <View style={{ width: 12, height: 12, backgroundColor: '#007AFF' }} />}</View>
-                    <Text style={{ flex: 1 }}>{it.title} (qta: {it.quantity})</Text>
+            {/* List all locations with add/edit/delete */}
+            <View style={styles.sectionCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
+                <Text style={styles.sectionTitle}>Tutte le ubicazioni ({locations.length})</Text>
+                {!addingLocationInMgr && (
+                  <TouchableOpacity 
+                    style={{ backgroundColor: '#34C759', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6 }}
+                    onPress={() => setAddingLocationInMgr(true)}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>+ Aggiungi</Text>
                   </TouchableOpacity>
-                ))
-              ) : <Text>Seleziona prima un'ubicazione.</Text>}
-            </ScrollView>
+                )}
+              </View>
 
-            <Text style={{ marginBottom: 6 }}>Riassegna selezionati a:</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <View style={{ flex: 1 }}>
-                <TouchableOpacity style={styles.pickerLike} onPress={() => { /* noop - simple list below */ }}>
-                  <Text>{mgrTargetLocation || 'Seleziona destinazione'}</Text>
-                </TouchableOpacity>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                  {locations.filter(l => l !== selectedLocationForMgr).map(l => (
-                    <TouchableOpacity key={l} style={[styles.locationChipSmall, mgrTargetLocation === l && styles.locationChipActive]} onPress={() => setMgrTargetLocation(l)}>
-                      <Text style={{ color: mgrTargetLocation === l ? '#fff' : '#000' }}>{l}</Text>
-                    </TouchableOpacity>
-                  ))}
+              {addingLocationInMgr && (
+                <View style={{ marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' }}>
+                  <TextInput
+                    placeholder="Nome ubicazione"
+                    value={newLocationNameInMgr}
+                    onChangeText={setNewLocationNameInMgr}
+                    style={styles.modalInput}
+                    autoFocus
+                  />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, marginRight: 5 }}>
+                      <Button title="Aggiungi" onPress={addLocationInMgr} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 5 }}>
+                      <Button 
+                        title="Annulla" 
+                        color="gray" 
+                        onPress={() => {
+                          setAddingLocationInMgr(false);
+                          setNewLocationNameInMgr('');
+                        }} 
+                      />
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {locations.length === 0 ? (
+                <Text style={{ color: '#666', fontStyle: 'italic', paddingVertical: 20, textAlign: 'center' }}>
+                  Nessuna ubicazione presente. Creane una con il pulsante + Aggiungi.
+                </Text>
+              ) : (
+                locations.map(loc => (
+                  <View key={loc} style={styles.locationItemRow}>
+                    {editingLocationInMgr === loc ? (
+                      <View style={{ flex: 1 }}>
+                        <TextInput
+                          value={editingLocationNewNameInMgr}
+                          onChangeText={setEditingLocationNewNameInMgr}
+                          style={[styles.modalInput, { marginBottom: 10 }]}
+                          autoFocus
+                        />
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <View style={{ flex: 1, marginRight: 5 }}>
+                            <Button title="Salva" onPress={confirmRenameLocationInMgr} />
+                          </View>
+                          <View style={{ flex: 1, marginLeft: 5 }}>
+                            <Button 
+                              title="Annulla" 
+                              color="gray" 
+                              onPress={() => {
+                                setEditingLocationInMgr(null);
+                                setEditingLocationNewNameInMgr('');
+                              }} 
+                            />
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={{ flex: 1, fontSize: 16, fontWeight: '500' }}>{loc}</Text>
+                        <TouchableOpacity 
+                          style={styles.iconBtn} 
+                          onPress={() => {
+                            setEditingLocationInMgr(loc);
+                            setEditingLocationNewNameInMgr(loc);
+                          }}
+                        >
+                          <Text style={{ fontSize: 18 }}>✏️</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.iconBtn} 
+                          onPress={() => confirmAndDeleteLocation(loc)}
+                        >
+                          <Text style={{ fontSize: 18 }}>🗑️</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+
+            {/* Reassign items section */}
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>Sposta oggetti tra ubicazioni</Text>
+              
+              <Text style={{ marginBottom: 8, fontWeight: '600' }}>1. Seleziona ubicazione di origine:</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={{ marginBottom: 15 }}
+              >
+                {locations.map(loc => (
+                  <TouchableOpacity 
+                    key={loc} 
+                    style={[
+                      styles.locationChip, 
+                      selectedLocationForMgr === loc && styles.locationChipActive
+                    ]} 
+                    onPress={() => { 
+                      setSelectedLocationForMgr(loc); 
+                      setMgrSelectedItemIds([]); 
+                    }}
+                  >
+                    <Text style={{ color: selectedLocationForMgr === loc ? '#fff' : '#000' }}>
+                      {loc}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={{ marginBottom: 8, fontWeight: '600' }}>
+                2. Seleziona oggetti da spostare:
+              </Text>
+              <View style={{ maxHeight: 200, marginBottom: 15 }}>
+                <ScrollView>
+                  {selectedLocationForMgr ? (
+                    items.filter(it => it.location === selectedLocationForMgr).length === 0 ? (
+                      <Text style={{ fontStyle: 'italic', color: '#666' }}>
+                        Nessun oggetto in questa ubicazione
+                      </Text>
+                    ) : (
+                      items.filter(it => it.location === selectedLocationForMgr).map(it => (
+                        <TouchableOpacity 
+                          key={it.id} 
+                          style={styles.mgrItemRow} 
+                          onPress={() => toggleMgrSelectItem(it.id)}
+                        >
+                          <View style={styles.checkbox}>
+                            {mgrSelectedItemIds.includes(it.id) && (
+                              <View style={styles.checkboxChecked} />
+                            )}
+                          </View>
+                          <Text style={{ flex: 1 }}>{it.title} (qta: {it.quantity})</Text>
+                        </TouchableOpacity>
+                      ))
+                    )
+                  ) : (
+                    <Text style={{ fontStyle: 'italic', color: '#666' }}>
+                      Seleziona prima un'ubicazione di origine
+                    </Text>
+                  )}
                 </ScrollView>
               </View>
-              <View style={{ marginLeft: 8 }}>
-                <Button title="Riassegna" onPress={reassignMgrItems} />
-              </View>
+
+              <Text style={{ marginBottom: 8, fontWeight: '600' }}>
+                3. Seleziona ubicazione di destinazione:
+              </Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={{ marginBottom: 15 }}
+              >
+                {locations.filter(l => l !== selectedLocationForMgr).map(l => (
+                  <TouchableOpacity 
+                    key={l} 
+                    style={[
+                      styles.locationChipSmall, 
+                      mgrTargetLocation === l && styles.locationChipActive
+                    ]} 
+                    onPress={() => setMgrTargetLocation(l)}
+                  >
+                    <Text style={{ color: mgrTargetLocation === l ? '#fff' : '#000' }}>
+                      {l}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity 
+                style={styles.reassignBtn} 
+                onPress={reassignMgrItems}
+              >
+                <Text style={styles.reassignBtnText}>Sposta oggetti selezionati</Text>
+              </TouchableOpacity>
             </View>
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Button title="Chiudi" onPress={() => setLocationMgrVisible(false)} />
-              <Button title="Elimina ubicazione" color="red" onPress={() => { if (selectedLocationForMgr) confirmAndDeleteLocation(selectedLocationForMgr); else Alert.alert('Seleziona ubicazione','Seleziona prima un\'ubicazione da eliminare.'); }} />
-            </View>
-
-          </View>
+            {/* Close Button */}
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setLocationMgrVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Chiudi</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </SafeAreaView>
       </Modal>
 
       {/* Settings Modal */}
       <Modal visible={settingsVisible} animationType="slide" onRequestClose={() => setSettingsVisible(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ padding: 20, flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Impostazioni</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text>Modalità debug</Text>
-              <Switch value={debugMode} onValueChange={(v) => { setDebugMode(v); if (v) Alert.alert('Debug', 'Modalità debug abilitata. Tieni premuta un\'immagine per 2s per azioni di debug.'); }} />
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+            {/* Header */}
+            <View style={{ marginBottom: 30, alignItems: 'center' }}>
+              <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#333', marginBottom: 8 }}>Impostazioni</Text>
+              <View style={{ width: 60, height: 4, backgroundColor: '#007AFF', borderRadius: 2 }} />
             </View>
-            <Text style={{ color: '#666', marginTop: 6 }}>Se la modalità debug è attiva, premendo a lungo (2s) sulle immagini verranno mostrate azioni di debug (info, elimina file locale).</Text>
-            <View style={{ marginTop: 18 }}>
-                <Button title="Esporta DB (salva file JSON)" onPress={exportDatabase} />
+
+            {/* Debug Mode Card */}
+            <View style={styles.settingsCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingsCardTitle}>Modalità Debug</Text>
+                  <Text style={styles.settingsCardSubtitle}>
+                    Visualizza info avanzate sulle immagini
+                  </Text>
+                </View>
+                <Switch 
+                  value={debugMode} 
+                  onValueChange={(v) => { 
+                    setDebugMode(v); 
+                    if (v) Alert.alert('Debug', 'Modalità debug abilitata. Tieni premuta un\'immagine per 2s per azioni di debug.'); 
+                  }}
+                  trackColor={{ false: '#ddd', true: '#81C784' }}
+                  thumbColor={debugMode ? '#4CAF50' : '#f4f3f4'}
+                  style={{ transform: [{ scaleX: 1.2 }, { scaleY: 1.2 }] }}
+                />
+              </View>
+              <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f0f0f0' }}>
+                <Text style={styles.settingsCardNote}>
+                  💡 Premi a lungo (2s) sulle immagini per azioni di debug
+                </Text>
+              </View>
             </View>
-            <View style={{ marginTop: 10 }}>
-                <Button title="Importa DB (seleziona file JSON)" onPress={importDatabase} />
+
+            {/*Dark Mode Section*/}
+            <View style={styles.settingsCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingsCardTitle}>Modalità Scura</Text>
+                  <Text style={styles.settingsCardSubtitle}>
+                    Abilita la modalità scura
+                  </Text>
+                </View>
+                <Switch 
+                  value={debugMode} 
+                  onValueChange={(v) => { 
+                    if (v) Alert.alert('Modalità scura', 'Modalità scura abilitata.'); 
+                  }}
+                  trackColor={{ false: '#ddd', true: '#81C784' }}
+                  thumbColor={debugMode ? '#4CAF50' : '#f4f3f4'}
+                  style={{ transform: [{ scaleX: 1.2 }, { scaleY: 1.2 }] }}
+                />
+              </View>
             </View>
-            <View style={{ marginTop: 10 }}>
-                <Button title="Elimina tutto" color="red" onPress={deleteAllData} />
+
+            {/* Database Section */}
+            <Text style={styles.sectionHeader}>Database</Text>
+
+            {/* Export Card */}
+            <TouchableOpacity 
+              style={styles.settingsButton} 
+              onPress={exportDatabase}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.buttonIcon, { backgroundColor: '#E3F2FD' }]}>
+                <Text style={{ fontSize: 24 }}>📤</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingsButtonTitle}>Esporta Database</Text>
+                <Text style={styles.settingsButtonSubtitle}>Salva inventario e immagini in JSON</Text>
+              </View>
+              <Text style={{ fontSize: 20 }}>›</Text>
+            </TouchableOpacity>
+
+            {/* Import Card */}
+            <TouchableOpacity 
+              style={styles.settingsButton} 
+              onPress={importDatabase}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.buttonIcon, { backgroundColor: '#F3E5F5' }]}>
+                <Text style={{ fontSize: 24 }}>📥</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingsButtonTitle}>Importa Database</Text>
+                <Text style={styles.settingsButtonSubtitle}>Ripristina da file JSON</Text>
+              </View>
+              <Text style={{ fontSize: 20 }}>›</Text>
+            </TouchableOpacity>
+
+            {/* Danger Zone */}
+            <Text style={[styles.sectionHeader, { marginTop: 30, color: '#d32f2f' }]}>Zona Pericolo</Text>
+
+            {/* Delete All Card */}
+            <TouchableOpacity 
+              style={[styles.settingsButton, styles.dangerButton]} 
+              onPress={deleteAllData}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.buttonIcon, { backgroundColor: '#FFEBEE' }]}>
+                <Text style={{ fontSize: 24 }}>🗑️</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.settingsButtonTitle, { color: '#d32f2f' }]}>Elimina Tutto</Text>
+                <Text style={[styles.settingsButtonSubtitle, { color: '#c62828' }]}>
+                  Cancella oggetti, immagini e ubicazioni
+                </Text>
+              </View>
+              <Text style={{ fontSize: 20, color: '#d32f2f' }}>›</Text>
+            </TouchableOpacity>
+
+            {/* Footer */}
+            <View style={{ marginTop: 40, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#e0e0e0', alignItems: 'center' }}>
+              <Text style={{ color: '#999', fontSize: 12 }}>CasaApp v1.0</Text>
             </View>
+
             <View style={{ marginTop: 20 }}>
-              <Button title="Chiudi" onPress={() => setSettingsVisible(false)} />
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setSettingsVisible(false)}
+              >
+                <Text style={styles.closeButtonText}>Chiudi</Text>
+              </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </SafeAreaView>
       </Modal>
 
@@ -1070,14 +1343,27 @@ export default function App() {
       <Modal visible={duplicatePickerVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
           <View style={{ padding: 20, flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Scegli oggetto esistente</Text>
-            <Text style={{ marginBottom: 8 }}>{duplicateContextMode === 'create' ? `Seleziona l'oggetto a cui aggiungere la quantità (${duplicateContextNewQuantity})` : `Seleziona l'oggetto nel target su cui aggregare lo spostamento`}</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>
+              Scegli oggetto esistente
+            </Text>
+            <Text style={{ marginBottom: 8 }}>
+              {duplicateContextMode === 'create' 
+                ? `Seleziona l'oggetto a cui aggiungere la quantità (${duplicateContextNewQuantity})` 
+                : `Seleziona l'oggetto nel target su cui aggregare lo spostamento`}
+            </Text>
             <ScrollView style={{ flex: 1, marginBottom: 12 }}>
               {duplicateCandidates.length === 0 ? (
                 <Text>Nessun candidato trovato.</Text>
               ) : duplicateCandidates.map(c => (
-                <TouchableOpacity key={c.id} style={styles.mgrItemRow} onPress={() => onDuplicateCandidatePress(c)}>
-                  <Image source={{ uri: c.images[0] }} style={{ width: 48, height: 48, borderRadius: 6, marginRight: 8 }} />
+                <TouchableOpacity 
+                  key={c.id} 
+                  style={styles.mgrItemRow} 
+                  onPress={() => onDuplicateCandidatePress(c)}
+                >
+                  <Image 
+                    source={{ uri: c.images[0] }} 
+                    style={{ width: 48, height: 48, borderRadius: 6, marginRight: 8 }} 
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: 'bold' }}>{c.title}</Text>
                     <Text>Ubicazione: {c.location} — Qta: {c.quantity}</Text>
@@ -1088,7 +1374,18 @@ export default function App() {
             </ScrollView>
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Button title="Annulla" color="gray" onPress={() => { setDuplicatePickerVisible(false); setDuplicateCandidates([]); setDuplicateContextNewQuantity(0); setDuplicateContextMode(null); setDuplicateContextMovingItemId(null); /* continue processing queue if reassign */ if (reassignQueue.length > 0) processNextReassign(); }} />
+              <Button 
+                title="Annulla" 
+                color="gray" 
+                onPress={() => { 
+                  setDuplicatePickerVisible(false); 
+                  setDuplicateCandidates([]); 
+                  setDuplicateContextNewQuantity(0); 
+                  setDuplicateContextMode(null); 
+                  setDuplicateContextMovingItemId(null); 
+                  if (reassignQueue.length > 0) processNextReassign(); 
+                }} 
+              />
             </View>
           </View>
         </SafeAreaView>
@@ -1096,112 +1393,302 @@ export default function App() {
 
       {/* Item create/edit modal */}
       <Modal visible={modalVisible} animationType="slide">
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 200 }} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>{editingItem ? 'Modifica Oggetto' : 'Nuovo Oggetto'}</Text>
-
-              <TextInput placeholder="Titolo" value={newTitle} onChangeText={setNewTitle} style={styles.modalInput} />
-              <TextInput placeholder="Quantità" value={newQuantity} onChangeText={setNewQuantity} style={styles.modalInput} keyboardType="numeric" />
-
-              {editingItem && (
-                <>
-                  <View style={{ flexDirection: 'row', marginBottom: 10, alignItems: 'center' }}>
-                    <TouchableOpacity style={[styles.adjustButton, adjustmentMode === 'add' && styles.adjustButtonActive]} onPress={() => setAdjustmentMode(adjustmentMode === 'add' ? null : 'add')}>
-                      <Text style={[styles.adjustButtonText, adjustmentMode === 'add' && { color: '#fff' }]}>+ Aggiungi</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.adjustButton, adjustmentMode === 'remove' && styles.adjustButtonActive, { marginLeft: 10 }]} onPress={() => setAdjustmentMode(adjustmentMode === 'remove' ? null : 'remove')}>
-                      <Text style={[styles.adjustButtonText, adjustmentMode === 'remove' && { color: '#fff' }]}>- Rimuovi</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {adjustmentMode && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
-                      <TextInput placeholder={adjustmentMode === 'add' ? 'Quantità da aggiungere' : 'Quantità da rimuovere'} value={adjustmentValue} onChangeText={setAdjustmentValue} style={[styles.modalInput, { flex: 1, height: 36, marginBottom: 0, paddingVertical: 0 }]} keyboardType="numeric" />
-                      <Button title="Conferma" onPress={handleConfirmAdjustment} />
-                      <Button title="Annulla" color="gray" onPress={() => { setAdjustmentMode(null); setAdjustmentValue(''); }} />
-                    </View>
-                  )}
-                </>
-              )}
-
-              <TextInput placeholder="Descrizione" value={newDescription} onChangeText={setNewDescription} style={[styles.modalInput, { height: 120, textAlignVertical: 'top' }]} multiline maxLength={500} />
-
-              <Text style={{ marginBottom: 5 }}>Ubicazioni:</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginBottom: 5 }}>
-                <TouchableOpacity style={[styles.locationButton, { backgroundColor: '#007AFF' }]} onPress={() => setAddingLocation(true)}>
-                  <Text style={{ color: '#fff', fontSize: 14 }}>+</Text>
-                </TouchableOpacity>
-                {locations.map(loc => (
-                  <View key={loc} style={styles.locationBlock}>
-                    <View style={[styles.locationButton, newLocation === loc && { backgroundColor: '#007AFF' }]}>
-                      <TouchableOpacity onPress={() => setNewLocation(loc)} style={{ flex: 1 }}>
-                        <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: newLocation === loc ? '#fff' : '#000', fontSize: 12, paddingHorizontal: 8, flexShrink: 1 }}>{loc}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setEditingLocation(loc); setEditingLocationNewName(loc); }} style={{ paddingLeft: 10, paddingRight: 6 }}>
-                        <Text style={{ fontSize: 12 }}>✏️</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => confirmAndDeleteLocation(loc)} style={{ paddingLeft: 6 }}>
-                        <Text style={{ fontSize: 12, color: 'red' }}>🗑️</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            style={{ flex: 1 }}
+          >
+            <ScrollView 
+              contentContainerStyle={{ padding: 20, paddingBottom: 200 }} 
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Header */}
+              <View style={{ marginBottom: 30, alignItems: 'center' }}>
+                <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#333', marginBottom: 8 }}>
+                  {editingItem ? 'Modifica Oggetto' : 'Nuovo Oggetto'}
+                </Text>
+                <View style={{ width: 60, height: 4, backgroundColor: '#007AFF', borderRadius: 2 }} />
               </View>
 
-              {addingLocation && (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <TextInput placeholder="Nuova ubicazione" value={newLocationName} onChangeText={setNewLocationName} style={[styles.modalInput, { flex: 1, height: 36, marginBottom: 0, paddingVertical: 0 }]} />
-                  <Button title="Aggiungi" onPress={() => { addLocation(newLocationName); setNewLocationName(''); setAddingLocation(false); }} />
-                  <Button title="Annulla" color="gray" onPress={() => { setAddingLocation(false); setNewLocationName(''); }} />
-                </View>
-              )}
+              {/* Info Section */}
+              <View style={styles.formCard}>
+                <Text style={styles.formSectionTitle}>Informazioni Base</Text>
+                
+                <TextInput 
+                  placeholder="Titolo" 
+                  value={newTitle} 
+                  onChangeText={setNewTitle} 
+                  style={styles.formInput} 
+                  placeholderTextColor="#999"
+                />
+                
+                <TextInput 
+                  placeholder="Quantità" 
+                  value={newQuantity} 
+                  onChangeText={(text) => {
+                    const numValue = parseInt(text, 10);
+                    if (text === '' || (numValue >= 0 && !isNaN(numValue))) {
+                      setNewQuantity(text);
+                    }
+                  }} 
+                  style={styles.formInput} 
+                  keyboardType="numeric"
+                  placeholderTextColor="#999"
+                />
 
-              {editingLocation && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                  <TextInput placeholder="Rinomina ubicazione" value={editingLocationNewName} onChangeText={setEditingLocationNewName} style={[styles.modalInput, { flex: 1, height: 36, marginBottom: 0, paddingVertical: 0 }]} />
-                  <Button title="Salva" onPress={() => confirmRenameLocation(editingLocation, editingLocationNewName)} />
-                  <Button title="Annulla" color="gray" onPress={() => { setEditingLocation(null); setEditingLocationNewName(''); }} />
-                </View>
-              )}
+                <TextInput 
+                  placeholder="Descrizione" 
+                  value={newDescription} 
+                  onChangeText={setNewDescription} 
+                  style={[styles.formInput, { height: 100, textAlignVertical: 'top' }]} 
+                  multiline 
+                  maxLength={500}
+                  placeholderTextColor="#999"
+                />
+              </View>
 
-              <Text style={{ marginBottom: 5, marginTop: 10 }}>Immagini:</Text>
-              <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {newImages.map(uri => (
-                  <View key={uri} style={{ position: 'relative', marginRight: 10 }}>
-                    <TouchableOpacity onPress={() => setImageToView(uri)} onLongPress={() => { if (debugMode) showImageDebugActions(uri); }} delayLongPress={2000}>
-                      <Image source={{ uri }} style={{ width: screenWidth - 40, height: 200, borderRadius: 8, resizeMode: 'cover' }} />
+              {/* Adjustment Section (edit only) */}
+              {editingItem && (
+                <View style={styles.formCard}>
+                  <Text style={styles.formSectionTitle}>Modifica Quantità</Text>
+                  <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                    <TouchableOpacity 
+                      style={[
+                        styles.adjustButtonLarge, 
+                        adjustmentMode === 'add' && styles.adjustButtonLargeActive
+                      ]} 
+                      onPress={() => setAdjustmentMode(adjustmentMode === 'add' ? null : 'add')}
+                    >
+                      <Text style={{ fontSize: 20, marginBottom: 4 }}>➕</Text>
+                      <Text style={[
+                        styles.adjustButtonLargeText, 
+                        adjustmentMode === 'add' && { color: '#fff' }
+                      ]}>
+                        Aggiungi
+                      </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={{ position: 'absolute', top: 0, right: 5 }} onPress={() => confirmAndRemoveImage(uri)}>
-                      <Text style={{ color: 'red', fontSize: 35 }}>X</Text>
+
+                    <TouchableOpacity 
+                      style={[
+                        styles.adjustButtonLarge, 
+                        adjustmentMode === 'remove' && styles.adjustButtonLargeActive,
+                        { marginLeft: 10 }
+                      ]} 
+                      onPress={() => setAdjustmentMode(adjustmentMode === 'remove' ? null : 'remove')}
+                    >
+                      <Text style={{ fontSize: 20, marginBottom: 4 }}>➖</Text>
+                      <Text style={[
+                        styles.adjustButtonLargeText, 
+                        adjustmentMode === 'remove' && { color: '#fff' }
+                      ]}>
+                        Rimuovi
+                      </Text>
                     </TouchableOpacity>
                   </View>
-                ))}
-                {newImages.length < 5 && (
-                  <TouchableOpacity style={[styles.imageButtonSmall, { justifyContent: 'center', alignItems: 'center' }]} onPress={openImagePicker}>
-                    <Text style={styles.addButtonTextSmall}>+</Text>
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
 
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 }}>
+                  {adjustmentMode && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TextInput 
+                        placeholder={adjustmentMode === 'add' ? 'Quantità da aggiungere' : 'Quantità da rimuovere'} 
+                        value={adjustmentValue} 
+                        onChangeText={setAdjustmentValue} 
+                        style={[styles.formInput, { flex: 1, marginBottom: 0 }]} 
+                        keyboardType="numeric"
+                        placeholderTextColor="#999"
+                      />
+                      <TouchableOpacity 
+                        style={styles.adjConfirmBtn}
+                        onPress={handleConfirmAdjustment}
+                      >
+                        <Text style={styles.adjConfirmBtnText}>✓</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.adjCancelBtn}
+                        onPress={() => { 
+                          setAdjustmentMode(null); 
+                          setAdjustmentValue(''); 
+                        }}
+                      >
+                        <Text style={styles.adjCancelBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Location Section */}
+              <View style={styles.formCard}>
+                <Text style={styles.formSectionTitle}>Ubicazione</Text>
+                <TouchableOpacity 
+                  style={styles.dropdownButtonLarge} 
+                  onPress={() => setLocationDropdownVisible(!locationDropdownVisible)}
+                >
+                  <Text style={{ flex: 1, fontSize: 16, color: newLocation ? '#333' : '#999' }}>
+                    {newLocation || 'Seleziona ubicazione'}
+                  </Text>
+                  <Text style={{ fontSize: 16, color: '#007AFF' }}>{locationDropdownVisible ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+
+                {locationDropdownVisible && (
+                  <View style={styles.dropdownListLarge}>
+                    <ScrollView style={{ maxHeight: 150 }}>
+                      {locations.length === 0 ? (
+                        <Text style={{ padding: 10, fontStyle: 'italic', color: '#999' }}>
+                          Nessuna ubicazione. Creane una in "Gestione Ubicazioni".
+                        </Text>
+                      ) : (
+                        locations.map(loc => (
+                          <TouchableOpacity 
+                            key={loc} 
+                            style={[
+                              styles.dropdownItemLarge,
+                              newLocation === loc && styles.dropdownItemSelectedLarge
+                            ]} 
+                            onPress={() => {
+                              setNewLocation(loc);
+                              setLocationDropdownVisible(false);
+                            }}
+                          >
+                            <Text style={{ 
+                              color: newLocation === loc ? '#007AFF' : '#333',
+                              fontWeight: newLocation === loc ? '600' : 'normal',
+                              fontSize: 15
+                            }}>
+                              {loc}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {/* Images Section */}
+              <View style={styles.formCard}>
+                <Text style={styles.formSectionTitle}>Immagini ({newImages.length}/5)</Text>
+                <ScrollView 
+                  horizontal 
+                  pagingEnabled 
+                  showsHorizontalScrollIndicator={false} 
+                  style={{ marginBottom: 0 }}
+                >
+                  {newImages.map(uri => (
+                    <View key={uri} style={{ position: 'relative', marginRight: 10 }}>
+                      <TouchableOpacity 
+                        onPress={() => setImageToView(uri)} 
+                        onLongPress={() => { if (debugMode) showImageDebugActions(uri); }} 
+                        delayLongPress={2000}
+                      >
+                        <Image 
+                          source={{ uri }} 
+                          style={{ 
+                            width: screenWidth - 60, 
+                            height: 200, 
+                            borderRadius: 12, 
+                            resizeMode: 'cover' 
+                          }} 
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.imageRemoveBtn} 
+                        onPress={() => confirmAndRemoveImage(uri)}
+                      >
+                        <Text style={styles.imageRemoveBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {newImages.length < 5 && (
+                    <TouchableOpacity 
+                      style={styles.imageAddBtn} 
+                      onPress={openImagePicker}
+                    >
+                      <Text style={{ fontSize: 32, color: '#fff' }}>+</Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={{ marginTop: 30, gap: 10 }}>
                 {editingItem ? (
                   <>
-                    <View style={{ flex: 1, marginRight: 6 }}><Button title="Salva" onPress={confirmAndSaveItem} /></View>
-                    <View style={{ flex: 1, marginHorizontal: 6 }}><Button title="Elimina" color="red" onPress={() => { if (editingItem) confirmAndDeleteItem(editingItem.id); }} /></View>
-                    <View style={{ flex: 1, marginLeft: 6 }}><Button title="Annulla" color="gray" onPress={confirmCancel} /></View>
+                    <TouchableOpacity 
+                      style={styles.primaryButton}
+                      onPress={confirmAndSaveItem}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.primaryButtonText}>💾 Salva Modifiche</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.secondaryButton}
+                      onPress={confirmCancel}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.secondaryButtonText}>Annulla</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.settingsButton, styles.dangerButton]} 
+                      onPress={() => { 
+                        if (editingItem) confirmAndDeleteItem(editingItem.id); 
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.buttonIcon, { backgroundColor: '#FFEBEE' }]}>
+                        <Text style={{ fontSize: 24 }}>🗑️</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.settingsButtonTitle, { color: '#d32f2f' }]}>Elimina Oggetto</Text>
+                        <Text style={[styles.settingsButtonSubtitle, { color: '#c62828' }]}>
+                          Rimuovi questo oggetto dall'inventario
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 20, color: '#d32f2f' }}>›</Text>
+                    </TouchableOpacity>
                   </>
                 ) : (
                   <>
-                    <View style={{ flex: 1, marginRight: 6 }}><Button title="Salva" onPress={confirmAndSaveItem} /></View>
-                    <View style={{ flex: 1, marginLeft: 6 }}><Button title="Annulla" color="gray" onPress={resetModal} /></View>
+                    <TouchableOpacity 
+                      style={styles.primaryButton}
+                      onPress={confirmAndSaveItem}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.primaryButtonText}>➕ Crea Oggetto</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.secondaryButton}
+                      onPress={resetModal}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.secondaryButtonText}>Annulla</Text>
+                    </TouchableOpacity>
                   </>
                 )}
               </View>
 
               {imageToView && (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
-                  <TouchableOpacity style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={() => setImageToView(null)} />
-                  <Image source={{ uri: imageToView }} style={{ width: '90%', aspectRatio:1, resizeMode: 'contain' }} />
+                <View style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  right: 0, 
+                  bottom: 0, 
+                  backgroundColor: 'rgba(0,0,0,0.9)', 
+                  justifyContent: 'center', 
+                  alignItems: 'center', 
+                  zIndex: 10 
+                }}>
+                  <TouchableOpacity 
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} 
+                    onPress={() => setImageToView(null)} 
+                  />
+                  <Image 
+                    source={{ uri: imageToView }} 
+                    style={{ width: '90%', aspectRatio: 1, resizeMode: 'contain' }} 
+                  />
                 </View>
               )}
             </ScrollView>
@@ -1212,41 +1699,489 @@ export default function App() {
   );
 }
 
+const screenWidth = Dimensions.get('window').width;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
   searchContainer: { padding: 10 },
-  searchInput: { height: 40, borderColor: 'gray', borderWidth: 1, borderRadius: 8, paddingHorizontal: 10 },
+  searchInput: { 
+    height: 40, 
+    borderColor: 'gray', 
+    borderWidth: 1, 
+    borderRadius: 8, 
+    paddingHorizontal: 10 
+  },
 
-  itemContainer: { flexDirection: 'row', padding: 10, borderBottomWidth: 1, borderBottomColor: '#eee', alignItems: 'center' },
+  itemContainer: { 
+    flexDirection: 'row', 
+    padding: 10, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#eee', 
+    alignItems: 'center' 
+  },
   itemImageSmall: { width: 40, height: 40, borderRadius: 5 },
   itemDetails: { flex: 1, marginLeft: 10 },
   itemTitle: { fontSize: 16, fontWeight: 'bold' },
 
-  addButtonFixed: { position: 'absolute', bottom: 20, right: 20, padding: 12, backgroundColor: '#007AFF', borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 5,},
   addButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
 
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign:'center' },
-  modalInput: { borderWidth: 1, borderColor: 'gray', borderRadius: 8, padding: 10, marginBottom: 15 },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    marginBottom: 20, 
+    textAlign:'center' 
+  },
+  modalInput: { 
+    borderWidth: 1, 
+    borderColor: 'gray', 
+    borderRadius: 8, 
+    padding: 10, 
+    marginBottom: 15 
+  },
 
-  imageButtonSmall: { width:40, height:40, borderRadius:5, backgroundColor:'#007AFF', marginRight:5 },
+  imageButtonSmall: { 
+    width:40, 
+    height:40, 
+    borderRadius:5, 
+    backgroundColor:'#007AFF', 
+    marginRight:5 
+  },
   addButtonTextSmall: { color:'#fff', fontSize:12, fontWeight:'bold' },
 
-  emptyContainer: { flex:1, justifyContent:'center', alignItems:'center', padding:20 },
+  emptyContainer: { 
+    flex:1, 
+    justifyContent:'center', 
+    alignItems:'center', 
+    padding:20 
+  },
 
-  locationBlock: { width: '42%', margin: '1%' },
-  locationButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 40, borderRadius: 6, backgroundColor: '#eee', paddingHorizontal: 10 },
-
-  adjustButton: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 6, borderWidth: 1, borderColor: '#007AFF' },
+  adjustButton: { 
+    paddingVertical: 8, 
+    paddingHorizontal: 14, 
+    borderRadius: 6, 
+    borderWidth: 1, 
+    borderColor: '#007AFF' 
+  },
   adjustButtonActive: { backgroundColor: '#007AFF' },
   adjustButtonText: { color: '#007AFF', fontWeight: 'bold' },
 
-  locationChip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16, backgroundColor: '#eee', marginRight: 8, marginBottom: 8 },
-  locationChipSmall: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#eee', marginRight: 8 },
+  locationChip: { 
+    paddingVertical: 8, 
+    paddingHorizontal: 12, 
+    borderRadius: 16, 
+    backgroundColor: '#eee', 
+    marginRight: 8, 
+    marginBottom: 8 
+  },
+  locationChipSmall: { 
+    paddingVertical: 6, 
+    paddingHorizontal: 10, 
+    borderRadius: 12, 
+    backgroundColor: '#eee', 
+    marginRight: 8 
+  },
   locationChipActive: { backgroundColor: '#007AFF' },
-  mgrItemRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  pickerLike: { borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 10 },
+  
+  mgrItemRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingVertical: 8, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#f0f0f0' 
+  },
 
-  fabContainer: {position: 'absolute', bottom: 20, right: 20, flexDirection: 'column', alignItems: 'flex-end'},
-  fab: {paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3, elevation: 5, marginBottom: 10},
+  fabContainer: {
+    position: 'absolute', 
+    bottom: 20, 
+    right: 20, 
+    flexDirection: 'column', 
+    alignItems: 'flex-end'
+  },
+  fab: {
+    paddingVertical: 10, 
+    paddingHorizontal: 14, 
+    borderRadius: 8, 
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.25, 
+    shadowRadius: 3, 
+    elevation: 5, 
+    marginBottom: 10
+  },
 
-});
+  // Location Manager styles
+  sectionCard: {
+    backgroundColor: '#f9f9f9',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+  },
+  addLocationBtn: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  addLocationBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  locationItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  iconBtn: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#888',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  checkboxChecked: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#007AFF',
+  },
+  reassignBtn: {
+    backgroundColor: '#34C759',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  reassignBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+
+  // Dropdown styles
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#fff',
+  },
+  dropdownList: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    marginBottom: 15,
+  },
+  dropdownItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#f0f8ff',
+  },
+
+  // Settings styles
+  settingsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+       marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  settingsCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  settingsCardSubtitle: {
+    fontSize: 13,
+    color: '#999',
+  },
+  settingsCardNote: {
+    fontSize: 13,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  sectionHeader: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#007AFF',
+    marginTop: 20,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  dangerButton: {
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
+    backgroundColor: '#fff5f5',
+  },
+  buttonIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  settingsButtonTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  settingsButtonSubtitle: {
+    fontSize: 12,
+    color: '#999',
+  },
+  closeButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Form styles
+  formCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  formSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#007AFF',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  formInput: {
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 15,
+    color: '#333',
+    backgroundColor: '#fafafa',
+  },
+
+  // Adjustment buttons
+  adjustButtonLarge: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  adjustButtonLargeActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  adjustButtonLargeText: {
+    color: '#007AFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+
+  adjConfirmBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#34C759',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  adjConfirmBtnText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  adjCancelBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  adjCancelBtnText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+
+  // Dropdown large
+  dropdownButtonLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#fafafa',
+  },
+  dropdownListLarge: {
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  dropdownItemLarge: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemSelectedLarge: {
+    backgroundColor: '#E3F2FD',
+  },
+
+  // Image buttons
+  imageAddBtn: {
+    width: screenWidth - 60,
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  imageRemoveBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 59, 48, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  imageRemoveBtnText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+
+  // Primary/Secondary/Danger buttons
+  primaryButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    backgroundColor: '#fff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+  },
+  secondaryButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dangerButtonText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dangerButtonLarge: {
+  paddingVertical: 16,
+  marginTop: 10,
+  borderWidth: 2,
+  borderColor: '#FF3B30',
+},
+},
+);
