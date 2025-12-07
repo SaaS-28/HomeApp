@@ -3,6 +3,13 @@
 # dependencies
 node_modules/
 
+# PNPM specific lockfile and store directory
+.pnpm-store/
+pnpm-lock.yaml.tmp
+
+# just for safety, lock files should be committed
+.git/
+
 # Expo
 .expo/
 dist/

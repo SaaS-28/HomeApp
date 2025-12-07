@@ -12,6 +12,11 @@
     ],
     "workspaceFolder": "/workspace",
     "remoteUser": "user",
+    "remoteEnv": {
+        // Set a path for the pnpm store that is NOT on the host mount.
+        "PNPM_HOME": "/usr/local/share/pnpm", // Common location
+        "PNPM_STORE_DIR": "/usr/local/share/pnpm/store"
+    },
     "mounts": [
         "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
         "source=${localEnv:HOME}/.ssh,target=/home/user/.ssh,type=bind,consistency=cached"
@@ -45,6 +50,6 @@
         }
     },
     "shutdownAction": "stopContainer",
-    "postCreateCommand": "chmod +x scripts/*.sh && scripts/post_create_command.sh user",
-    "postStartCommand": "scripts/post_start_command.sh"
+    "postCreateCommand": "bash scripts/post_create_command.sh user",
+    "postStartCommand": "bash scripts/post_start_command.sh"
 }
