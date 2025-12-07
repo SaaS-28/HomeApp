@@ -2,7 +2,7 @@ FROM node:20-bullseye
 
 # Arguments for user creation
 ARG USERNAME=user
-ARG USER_UID=1000
+ARG USER_UID=2000
 ARG USER_GID=$USER_UID
 
 # Set the working directory
@@ -13,11 +13,8 @@ RUN apt-get update && \
     apt-get install -y git curl ca-certificates sudo && \
     rm -rf /var/lib/apt/lists/*
 
-# Install pnpm globally
-RUN npm install -g pnpm
-
-# Install Expo CLI globally
-RUN pnpm add -g expo-cli
+# Install global tools with npm
+RUN npm install -g pnpm expo-cli
 
 # Create a non-root user with sudo access
 RUN groupadd --gid $USER_GID $USERNAME && \
