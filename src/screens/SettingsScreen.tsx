@@ -1,7 +1,7 @@
 // src/screens/SettingsScreen.tsx
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Switch, Alert, SafeAreaView, ScrollView } from 'react-native';
-import { useTheme } from '../contexts/ThemeContext'; // <--- usa il context
+import { useTheme } from '../contexts/ThemeContext'; // Import the ThemeContext
 
 // ============================================
 // TYPES
@@ -37,7 +37,7 @@ interface SettingsModalProps {
 }
 
 // ============================================
-// THEME CONFIGURATION (puoi lasciare com'è)
+// THEME CONFIGURATION
 // ============================================
 const Colors: Record<'light' | 'dark', ThemeColors> = {
   light: {
@@ -77,7 +77,7 @@ const Colors: Record<'light' | 'dark', ThemeColors> = {
 };
 
 // ============================================
-// SETTINGS MODAL COMPONENT (usando ThemeContext)
+// SETTINGS MODAL COMPONENT (using ThemeContext)
 // ============================================
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
   visible, 
@@ -88,17 +88,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   importDatabase,
   deleteAllData 
 }) => {
-  // usa il ThemeContext invece di AsyncStorage locale
+  //Using ThemeContext
   const { themePreference, setThemePreference, systemScheme } = useTheme();
 
-  // Calcola il tema effettivo dal context
+  //Check if dark mode is active
   const isDarkMode = themePreference === 'auto' 
     ? systemScheme === 'dark' 
     : themePreference === 'dark';
 
   const theme = isDarkMode ? Colors.dark : Colors.light;
 
-  // dynamic styles come qui (stessi nomi del tuo file originale)
+  //Dynamic styles
   const dynamicStyles = {
     container: {
       flex: 1,
@@ -234,11 +234,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     },
   };
 
-  // quando l'utente sceglie tema -> aggiorna il context (che farà anche AsyncStorage)
+  // when the user selects a theme option --> update the context
   const onSelectTheme = async (pref: ThemePreference) => {
     await setThemePreference(pref);
-    // opzionale: chiudi la modal subito dopo la scelta
-    // onClose();
   };
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
   View, 
   Text, 
@@ -6,16 +6,13 @@ import {
   SafeAreaView, 
   ScrollView, 
   TouchableOpacity, 
-  TextInput,
-  useColorScheme 
+  TextInput
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../contexts/ThemeContext'; // Import the ThemeContext
 
 // ============================================
 // TYPES
 // ============================================
-type ThemePreference = 'auto' | 'light' | 'dark';
-
 interface ThemeColors {
   background: string;
   card: string;
@@ -144,30 +141,15 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
   setMgrTargetLocation,
   reassignMgrItems
 }) => {
-  // Theme Management
-  const systemColorScheme = useColorScheme();
-  const [themePreference, setThemePreference] = useState<ThemePreference>('auto');
-  
+  // Using ThemeContext
+  const { themePreference, systemScheme } = useTheme();
+
+  // Check if dark mode is active
   const isDarkMode = themePreference === 'auto' 
-    ? systemColorScheme === 'dark' 
+    ? systemScheme === 'dark' 
     : themePreference === 'dark';
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
-
-  useEffect(() => {
-    loadThemePreference();
-  }, []);
-
-  const loadThemePreference = async (): Promise<void> => {
-    try {
-      const saved = await AsyncStorage.getItem('themePreference');
-      if (saved && (saved === 'auto' || saved === 'light' || saved === 'dark')) {
-        setThemePreference(saved as ThemePreference);
-      }
-    } catch (error) {
-      console.log('Errore caricamento tema:', error);
-    }
-  };
 
   // ============================================
   // DYNAMIC STYLES

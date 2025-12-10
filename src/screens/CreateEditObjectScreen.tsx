@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -10,18 +10,15 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
-  useColorScheme,
-  Alert
+  Dimensions
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../contexts/ThemeContext'; // Import the ThemeContext
 
 const screenWidth = Dimensions.get('window').width;
 
 // ============================================
 // TYPES
 // ============================================
-type ThemePreference = 'auto' | 'light' | 'dark';
 type AdjustmentMode = 'add' | 'remove' | null;
 
 interface ThemeColors {
@@ -159,32 +156,19 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   confirmAndRemoveImage,
   showImageDebugActions
 }) => {
-  // Theme Management
-  const systemColorScheme = useColorScheme();
-  const [themePreference, setThemePreference] = useState<ThemePreference>('auto');
+  // Using ThemeContext
+  const { themePreference, systemScheme } = useTheme();
+  
+  // Local state for UI
   const [locationDropdownVisible, setLocationDropdownVisible] = useState(false);
   const [imageToView, setImageToView] = useState<string | null>(null);
   
+  // Check if dark mode is active
   const isDarkMode = themePreference === 'auto' 
-    ? systemColorScheme === 'dark' 
+    ? systemScheme === 'dark' 
     : themePreference === 'dark';
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
-
-  useEffect(() => {
-    loadThemePreference();
-  }, []);
-
-  const loadThemePreference = async (): Promise<void> => {
-    try {
-      const saved = await AsyncStorage.getItem('themePreference');
-      if (saved && (saved === 'auto' || saved === 'light' || saved === 'dark')) {
-        setThemePreference(saved as ThemePreference);
-      }
-    } catch (error) {
-      console.log('Errore caricamento tema:', error);
-    }
-  };
 
   // ============================================
   // DYNAMIC STYLES
