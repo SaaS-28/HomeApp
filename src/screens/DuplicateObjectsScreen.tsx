@@ -177,6 +177,7 @@ const DuplicatePickerModal: React.FC<DuplicatePickerModalProps> = ({
     },
   };
 
+  /* return subtitle text based on context mode */
   const getSubtitleText = (): string => {
     if (duplicateContextMode === 'create') {
       return `Seleziona l'oggetto a cui aggiungere la quantità (${duplicateContextNewQuantity})`;

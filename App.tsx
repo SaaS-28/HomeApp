@@ -1,28 +1,28 @@
-// App.tsx
+/* ===== REACT IMPORTS =====*/
 import React, { useEffect, useState } from 'react';
 import { 
   StyleSheet, Text, View, TextInput, FlatList, Image, TouchableOpacity,
-  Alert, useColorScheme
+  Alert
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // For persistent storage
 
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as DocumentPicker from 'expo-document-picker';
-import * as Sharing from 'expo-sharing';
+/* ===== EXPO IMPORTS =====*/
+import * as ImageManipulator from 'expo-image-manipulator'; // For image compression and manipulation
+import * as FileSystem from 'expo-file-system/legacy'; // For file system operations
+import * as DocumentPicker from 'expo-document-picker'; // For picking JSON files
+import * as Sharing from 'expo-sharing'; // For sharing exported files
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from 'expo-image-picker'; // For image picking
 
-/*MY IMPORTS*/
-import SettingsModal from './src/screens/SettingsScreen';
-import DuplicatePickerModal from './src/screens/DuplicateObjectsScreen';
-import ItemEditorModal from './src/screens/CreateEditObjectScreen';
-import LocationManagerModal from './src/screens/LocationManagerScreen';
+/* ===== MY IMPORTS =====*/
+import SettingsModal from './src/screens/SettingsScreen'; // Settings modal
+import DuplicatePickerModal from './src/screens/DuplicateObjectsScreen'; // Duplicate selection modal
+import ItemEditorModal from './src/screens/CreateEditObjectScreen'; // Create/Edit item modal
+import LocationManagerModal from './src/screens/LocationManagerScreen'; // Location manager modal
 
-/* Theme context */
-import { useTheme, ThemeProvider } from './src/contexts/ThemeContext';
+import { useTheme, ThemeProvider } from './src/contexts/ThemeContext'; // Theme context
 
-/*InventoryItem object e structure*/
+/* InventoryItem object & structure */
 interface InventoryItem {
   id: string;
   title: string;
@@ -33,63 +33,67 @@ interface InventoryItem {
 }
 
 function AppInner() {
-  const { themePreference, systemScheme } = useTheme();
-  const systemColorScheme = systemScheme;
+  /* ===== THEME VARIABLES ===== */
+  const { themePreference, systemScheme } = useTheme(); // 'light' | 'dark' | 'auto'
+  const systemColorScheme = systemScheme; // 'light' | 'dark'
+
+  // Determine if dark mode should be applied
   const isDarkMode = themePreference === 'auto' 
     ? systemColorScheme === 'dark' 
     : themePreference === 'dark';
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
+  /* ===== SEARCH BAR VARIABLES ===== */
+  const [searchQuery, setSearchQuery] = useState(''); // Search bar state
+  const [items, setItems] = useState<InventoryItem[]>([]); // All inventory items
+  const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]); // Filtered items based on search
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  /* ===== CREATE/EDIT MODAL ===== */
+  const [modalVisible, setModalVisible] = useState(false); // Create/Edit item modal visibility
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null); // Currently editing item
 
-  const [newTitle, setNewTitle] = useState('');
-  const [newQuantity, setNewQuantity] = useState('');
-  const [newLocation, setNewLocation] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [newImages, setNewImages] = useState<string[]>([]);
+  const [newTitle, setNewTitle] = useState(''); // Title of new/editing item
+  const [newQuantity, setNewQuantity] = useState(''); // Quantity of new/editing item
+  const [newLocation, setNewLocation] = useState(''); // Location of new/editing item
+  const [newDescription, setNewDescription] = useState(''); // Description of new/editing item
+  const [newImages, setNewImages] = useState<string[]>([]); // Images of new/editing item
 
-  const [locations, setLocations] = useState<string[]>([]);
-  // Location dropdown state
-  const [locationDropdownVisible, setLocationDropdownVisible] = useState(false);
+  const [locations, setLocations] = useState<string[]>([]); // All locations
+  const [locationDropdownVisible, setLocationDropdownVisible] = useState(false); // Location dropdown state
 
-  const [adjustmentMode, setAdjustmentMode] = useState<'add' | 'remove' | null>(null);
-  const [adjustmentValue, setAdjustmentValue] = useState('');
+  const [adjustmentMode, setAdjustmentMode] = useState<'add' | 'remove' | null>(null); // Quantity adjustment mode
+  const [adjustmentValue, setAdjustmentValue] = useState(''); // Quantity adjustment value
 
-  // Location Manager modal states
-  const [locationMgrVisible, setLocationMgrVisible] = useState(false);
-  const [selectedLocationForMgr, setSelectedLocationForMgr] = useState<string | null>(null);
-  const [mgrSelectedItemIds, setMgrSelectedItemIds] = useState<string[]>([]);
-  const [mgrTargetLocation, setMgrTargetLocation] = useState<string | null>(null);
+  const [reassignQueue, setReassignQueue] = useState<string[]>([]); // Queue of item IDs to reassign
+  const [reassignTarget, setReassignTarget] = useState<string | null>(null); // Target location for reassignment
+
+  const [imageToView, setImageToView] = useState<string | null>(null); // Image viewer state
+  const [originalSnapshot, setOriginalSnapshot] = useState<any>(null); // Snapshot of original item data for change detection
+
+  const [shouldReopenItemModal, setShouldReopenItemModal] = useState(false); // Flag to reopen item modal after location manager
+
+  /* ===== REASSING QUANTITY MODAL ===== */
+  const [duplicatePickerVisible, setDuplicatePickerVisible] = useState(false); // Duplicate picker modal visibility
+  const [duplicateCandidates, setDuplicateCandidates] = useState<InventoryItem[]>([]); // Candidates for duplicate selection
+  const [duplicateContextNewQuantity, setDuplicateContextNewQuantity] = useState(0); // New quantity for duplicate context
+  const [duplicateContextMode, setDuplicateContextMode] = useState<'create'|'reassign'|null>(null); // Context mode
+  const [duplicateContextMovingItemId, setDuplicateContextMovingItemId] = useState<string | null>(null); // Moving item ID for reassignment
+
+  /* ===== LOCATION MANAGER MODAL ===== */
+  const [locationMgrVisible, setLocationMgrVisible] = useState(false); // Location Manager modal visibility
+  const [selectedLocationForMgr, setSelectedLocationForMgr] = useState<string | null>(null); // Selected location in Location Manager
+  const [mgrSelectedItemIds, setMgrSelectedItemIds] = useState<string[]>([]); // Selected item IDs in Location Manager
+  const [mgrTargetLocation, setMgrTargetLocation] = useState<string | null>(null); // Target location for reassignment
   
-  // Location Manager - Add/Edit states
-  const [addingLocationInMgr, setAddingLocationInMgr] = useState(false);
-  const [newLocationNameInMgr, setNewLocationNameInMgr] = useState('');
-  const [editingLocationInMgr, setEditingLocationInMgr] = useState<string | null>(null);
-  const [editingLocationNewNameInMgr, setEditingLocationNewNameInMgr] = useState('');
+  const [addingLocationInMgr, setAddingLocationInMgr] = useState(false); // Adding new location state in Location Manager
+  const [newLocationNameInMgr, setNewLocationNameInMgr] = useState(''); // New location name input in Location Manager
+  const [editingLocationInMgr, setEditingLocationInMgr] = useState<string | null>(null); // Location being edited in Location Manager
+  const [editingLocationNewNameInMgr, setEditingLocationNewNameInMgr] = useState(''); // New name for location being edited
 
-  // Settings / debug mode
-  const [settingsVisible, setSettingsVisible] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  /* ===== SETTINGS MODAL ===== */
+  const [settingsVisible, setSettingsVisible] = useState(false); // Settings modal visibility
+  const [debugMode, setDebugMode] = useState(false); // Debug mode state
 
-  // Reassign flow context (for handling duplicates during reassign)
-  const [reassignQueue, setReassignQueue] = useState<string[]>([]);
-  const [reassignTarget, setReassignTarget] = useState<string | null>(null);
-
-  // Duplicate selection modal states (used both for create and reassign)
-  const [duplicatePickerVisible, setDuplicatePickerVisible] = useState(false);
-  const [duplicateCandidates, setDuplicateCandidates] = useState<InventoryItem[]>([]);
-  const [duplicateContextNewQuantity, setDuplicateContextNewQuantity] = useState(0);
-  const [duplicateContextMode, setDuplicateContextMode] = useState<'create'|'reassign'|null>(null);
-  const [duplicateContextMovingItemId, setDuplicateContextMovingItemId] = useState<string | null>(null);
-
-  const [imageToView, setImageToView] = useState<string | null>(null);
-  const [originalSnapshot, setOriginalSnapshot] = useState<any>(null);
-
-  // Draft state per salvare temporaneamente l'oggetto in creazione
+  /* Draft management for Create/Edit Item Modal */
   const [itemDraft, setItemDraft] = useState<{
     title: string;
     quantity: string;
@@ -97,18 +101,19 @@ function AppInner() {
     description: string;
     images: string[];
   } | null>(null);
-  const [shouldReopenItemModal, setShouldReopenItemModal] = useState(false);
 
-  // Load items and locations once on mount
+  /* Load items and locations on mount */
   useEffect(() => {
     loadItems();
     loadLocations();
   }, []);
 
+  /* Load and Save functions for AsyncStorage */
   const loadItems = async () => {
     try {
       const data = await AsyncStorage.getItem('inventory');
       const parsed: InventoryItem[] = data ? JSON.parse(data) : [];
+
       setItems(parsed);
       setFilteredItems(parsed);
     } catch (e) {
@@ -116,9 +121,11 @@ function AppInner() {
     }
   };
 
+  /* Save items to AsyncStorage */
   const saveItems = async (newItems: InventoryItem[]) => {
     try {
       await AsyncStorage.setItem('inventory', JSON.stringify(newItems));
+
       setItems(newItems);
       setFilteredItems(newItems);
     } catch (e) {
@@ -126,6 +133,7 @@ function AppInner() {
     }
   };
 
+  /* Load locations from AsyncStorage */
   const loadLocations = async () => {
     try {
       const data = await AsyncStorage.getItem('locations');
@@ -136,6 +144,7 @@ function AppInner() {
     }
   };
 
+  /* Save locations to AsyncStorage */
   const saveLocations = async (newLocations: string[]) => {
     try {
       await AsyncStorage.setItem('locations', JSON.stringify(newLocations));
@@ -145,22 +154,26 @@ function AppInner() {
     }
   };
 
+  /* Image picking and handling functions */
   const openImagePicker = async () => {
     if (newImages.length >= 5) {
       Alert.alert('Limite raggiunto', 'Puoi aggiungere al massimo 5 immagini.');
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4,3],
       quality: 1,
     });
+
     if (!result.canceled && result.assets && result.assets[0]) {
       try {
         const pickedUri = result.assets[0].uri;
         const savedUri = await compressAndSaveImage(pickedUri, { maxWidth: 1280, maxSizeKB: 250 });
-        setNewImages(prev => [...prev, savedUri]);
+
+        setNewImages(prev => [...prev, savedUri]); // Add to images array --> It builds a new array with the previous images plus the new one
       } catch (e) {
         console.error('Errore compress/save image', e);
         Alert.alert('Errore immagine', 'Non è stato possibile processare l\'immagine.');
@@ -168,6 +181,7 @@ function AppInner() {
     }
   };
 
+  /* Compress and save image to local filesystem */
   const compressAndSaveImage = async (
     uri: string,
     opts: { maxWidth?: number; maxSizeKB?: number } = {}
@@ -175,27 +189,32 @@ function AppInner() {
     const maxWidth = opts.maxWidth ?? 1280;
     const targetKB = opts.maxSizeKB ?? 250;
 
+    // Helper to get file size in KB
     const getSizeKB = async (furi: string): Promise<number | null> => {
       try {
         const info = await FileSystem.getInfoAsync(furi);
         if (info && 'size' in info && typeof (info as any).size === 'number') {
           return Math.round((info as any).size / 1024);
         }
+
         return null;
       } catch (e) {
         return null;
       }
     };
 
+    // Determine base directory for saving images
     const baseDir: string | null =
       (FileSystem as any).documentDirectory ||
       (FileSystem as any).cacheDirectory ||
       null;
 
+    // Prepare final path
     const imagesDir = baseDir ? `${baseDir}images/` : null;
     const filename = `img_${Date.now()}.jpg`;
     const finalPath = imagesDir ? `${imagesDir}${filename}` : null;
 
+    // Ensure images directory exists
     if (imagesDir) {
       try {
         const dirInfo = await FileSystem.getInfoAsync(imagesDir);
@@ -211,16 +230,19 @@ function AppInner() {
     let quality = 0.9;
     const minQuality = 0.35;
 
+    // Loop until size requirement is met or quality threshold is reached
     while (quality >= minQuality) {
       try {
+        // Compress image
         const manipResult = await ImageManipulator.manipulateAsync(
           uri,
           [{ resize: { width: maxWidth } }],
           { compress: quality, format: ImageManipulator.SaveFormat.JPEG }
         );
 
-        const tmpUri = manipResult.uri;
+        const tmpUri = manipResult.uri; // Temporary URI of compressed image
 
+        // If no final path, just check size and return if acceptable
         if (!finalPath) {
           const tmpSize = await getSizeKB(tmpUri);
           if (tmpSize !== null && tmpSize <= targetKB) return tmpUri;
@@ -229,6 +251,8 @@ function AppInner() {
           continue;
         }
 
+        // Try to move, copy, or download the file to final path
+        // If one method fails, try the next
         try {
           await FileSystem.moveAsync({ from: tmpUri, to: finalPath });
         } catch (moveErr) {
@@ -239,7 +263,9 @@ function AppInner() {
           }
         }
 
+        // Check size of saved file
         lastSaved = finalPath;
+
         const sizeKB = await getSizeKB(finalPath);
         if (sizeKB === null) return finalPath;
         if (sizeKB <= targetKB) return finalPath;
@@ -247,6 +273,8 @@ function AppInner() {
         quality -= 0.15;
       } catch (err) {
         console.warn('compressAndSaveImage inner error:', err);
+
+        // If error occurs, try to download directly if finalPath exists
         if (finalPath) {
           try {
             await FileSystem.downloadAsync(uri, finalPath);
@@ -262,8 +290,9 @@ function AppInner() {
       }
     }
 
-    if (lastSaved) return lastSaved;
+    if (lastSaved) return lastSaved; // Return last saved if quality loop ends
 
+    // As a last resort, download the original image if finalPath exists
     if (finalPath) {
       await FileSystem.downloadAsync(uri, finalPath);
       return finalPath;
@@ -272,6 +301,7 @@ function AppInner() {
     throw new Error('compressAndSaveImage: impossibile ottenere o creare un file immagine.');
   };
 
+  /* Debugging functions for images */
   const getImageDebugInfo = async (uri: string) : Promise<{ exists: boolean; uri: string; sizeKB: number | null; persisted: boolean }> => {
     let info: any = null;
     try {
@@ -280,19 +310,21 @@ function AppInner() {
       info = { exists: false, uri };
     }
 
-    const sizeKB = info && 'size' in info && typeof info.size === 'number' ? Math.round(info.size / 1024) : null;
+    const sizeKB = info && 'size' in info && typeof info.size === 'number' ? Math.round(info.size / 1024) : null; //Get size in KB
 
-    const doc = (FileSystem as any).documentDirectory || null;
-    const cache = (FileSystem as any).cacheDirectory || null;
-    const persisted = !!((doc && uri.startsWith(doc)) || (cache && uri.startsWith(cache)));
+    const doc = (FileSystem as any).documentDirectory || null; // Get document directory
+    const cache = (FileSystem as any).cacheDirectory || null; // Get cache directory
+    const persisted = !!((doc && uri.startsWith(doc)) || (cache && uri.startsWith(cache))); // Check if in persistent dirs
 
     return { exists: !!(info && info.exists), uri: info ? info.uri : uri, sizeKB, persisted };
   };
 
+  /* Show debug info for an image */
   const debugImageInfo = async (uri: string) => {
     try {
       const info = await getImageDebugInfo(uri);
       console.log('[DEBUG IMAGE INFO]', info);
+
       Alert.alert(
         'Debug immagine',
         `URI: ${info.uri}\nEsiste: ${info.exists}\nSize (KB): ${info.sizeKB ?? 'sconosciuta'}\nPersistente nell\'app: ${info.persisted ? 'Sì' : 'No'}`,
@@ -304,6 +336,7 @@ function AppInner() {
     }
   };
 
+  /* Confirm and remove image from item and delete local file */
   const confirmAndRemoveImage = (uri: string) => {
     Alert.alert(
       'Rimuovi immagine',
@@ -326,11 +359,13 @@ function AppInner() {
     );
   };
   
+  /* Delete local image file */
   const deleteLocalImage = async (uri: string): Promise<boolean> => {
-    if (!uri) return false;
+    if (!uri) return false; // Invalid URI
 
     try {
-      await FileSystem.deleteAsync(uri, { idempotent: true });
+      await FileSystem.deleteAsync(uri, { idempotent: true }); // Delete file
+
       console.log('[DELETE LOCAL IMAGE] deleted:', uri);
       return true;
     } catch (e) {
@@ -339,6 +374,7 @@ function AppInner() {
     }
   };
 
+  /* Show debug actions for an image */
   const showImageDebugActions = (uri: string) => {
     if (!debugMode) return;
     Alert.alert(
@@ -371,27 +407,32 @@ function AppInner() {
         const imagesBase64 = await Promise.all(item.images.map(async (uri) => {
           try {
             console.log('Converting image to base64:', uri);
-            const fileData = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+            const fileData = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' }); // Read file as base64
+
             return { uri, base64: fileData };
           } catch (e) {
             console.warn('Could not convert image to base64:', uri, e);
             return { uri, base64: null };
           }
         }));
-        return { ...item, imagesBase64 };
+        return { ...item, imagesBase64 }; // Add imagesBase64 array to item
       }));
 
+      // Prepare export payload
       const payload = {
         exportedAt: new Date().toISOString(),
         inventory: invItemsWithBase64,
         locations: locRaw ? JSON.parse(locRaw) : []
       };
-      const json = JSON.stringify(payload, null, 2);
-      const filename = `casaapp_export_${Date.now()}.json`;
-      const baseCache: string = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || '';
-      const tmpUri = `${baseCache}${filename}`;
-      await FileSystem.writeAsStringAsync(tmpUri, json);
+
+      const json = JSON.stringify(payload, null, 2); // Pretty-print JSON
+      const filename = `casaapp_export_${Date.now()}.json`; // Filename with timestamp
+      const baseCache: string = (FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory || ''; // Base cache directory
+      const tmpUri = `${baseCache}${filename}`; // Temporary file URI
+
+      await FileSystem.writeAsStringAsync(tmpUri, json); // Write JSON to file
   
+      // Share the file
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(tmpUri, { mimeType: 'application/json', dialogTitle: 'Esporta database CasaApp' });
       } else {
@@ -405,30 +446,35 @@ function AppInner() {
 
   const importDatabase = async () => {
     try {
-      const res: any = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
+      const res: any = await DocumentPicker.getDocumentAsync({ type: 'application/json' }); // Pick JSON file
       console.log('DocumentPicker result:', res);
       
+      // Handle cancellation
       if (res.canceled === true || !res.assets || res.assets.length === 0) {
         console.log('Document picker cancelled');
         return;
       }
       
+      // Get the picked file URI
       const pickedUri: string = res.assets[0].uri;
       console.log('Picked URI:', pickedUri);
       
       let content: string;
       try {
         console.log('Attempting direct read...');
-        content = await FileSystem.readAsStringAsync(pickedUri);
+        content = await FileSystem.readAsStringAsync(pickedUri); // Try direct read
         console.log('Direct read successful, content length:', content.length);
       } catch (e) {
         console.warn('Direct read failed, attempting to copy to cache:', e);
+
+        // If direct read fails, copy to cache and read from there
         const filename = `temp_import_${Date.now()}.json`;
         const cacheDir = (FileSystem as any).cacheDirectory || '';
         const tempPath = `${cacheDir}${filename}`;
         
         console.log('Copying from', pickedUri, 'to', tempPath);
         
+        // Copy and read
         try {
           await FileSystem.copyAsync({ from: pickedUri, to: tempPath });
           console.log('Copy successful, reading from temp path...');
@@ -443,36 +489,43 @@ function AppInner() {
       }
 
       console.log('Parsing JSON...');
-      const parsed = JSON.parse(content);
-      let inv = Array.isArray(parsed.inventory) ? parsed.inventory : null;
-      const locs = Array.isArray(parsed.locations) ? parsed.locations : null;
+      const parsed = JSON.parse(content); // Parse JSON content
+      let inv = Array.isArray(parsed.inventory) ? parsed.inventory : null; // Validate inventory
+      const locs = Array.isArray(parsed.locations) ? parsed.locations : null; // Validate locations
       
       console.log('Parsed inventory items:', inv ? inv.length : 0, 'locations:', locs ? locs.length : 0);
       
+      // If invalid, alert and return
       if (!inv || !locs) { 
         Alert.alert('Importazione', 'File non valido o non compatibile.'); 
         return; 
       }
 
+      // Restore images from base64
       const baseDir: string = (FileSystem as any).documentDirectory || '';
       const imagesDir = `${baseDir}images/`;
       
+      // Process each inventory item
       inv = await Promise.all(inv.map(async (item: any) => {
         let restoredImages: string[] = [];
         
+        // Restore images from base64 data
         if (item.imagesBase64 && Array.isArray(item.imagesBase64)) {
+          // Iterate over each base64 image data
           for (const imgData of item.imagesBase64) {
             if (imgData.base64) {
               try {
-                const dirInfo = await FileSystem.getInfoAsync(imagesDir);
+                const dirInfo = await FileSystem.getInfoAsync(imagesDir); // Ensure images directory exists
                 if (!dirInfo.exists) {
                   await FileSystem.makeDirectoryAsync(imagesDir, { intermediates: true });
                 }
                 
+                // Create unique filename
                 const filename = `img_imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
                 const filePath = `${imagesDir}${filename}`;
                 console.log('Writing base64 image to:', filePath);
                 
+                // Write base64 data to file
                 await FileSystem.writeAsStringAsync(filePath, imgData.base64, { encoding: 'base64' });
                 restoredImages.push(filePath);
               } catch (e) {
@@ -482,6 +535,7 @@ function AppInner() {
           }
         }
         
+        // Return item with restored images
         return {
           ...item,
           images: restoredImages.length > 0 ? restoredImages : (item.images || []),
@@ -489,6 +543,7 @@ function AppInner() {
         };
       }));
 
+      // Ask user for import mode: replace or merge
       Alert.alert('Importazione DB', 'Scegli modalità di importazione', [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Sostituisci', onPress: async () => {
@@ -502,16 +557,21 @@ function AppInner() {
         },
         { text: 'Unisci', onPress: async () => {
             console.log('Merge mode selected');
-            const existingKeys = new Set(items.map(i => `${i.title.trim().toLowerCase()}||${i.location}`));
+            const existingKeys = new Set(items.map(i => `${i.title.trim().toLowerCase()}||${i.location}`)); // Create set of existing item keys
+            
+            // Filter items to add (avoid duplicates)
             const toAdd = inv.filter((i: InventoryItem) => {
               const key = `${(i.title||'').trim().toLowerCase()}||${i.location}`;
               return !existingKeys.has(key);
             });
-            const mergedItems = [...items, ...toAdd];
-            const locSet = new Set([...locations, ...locs]);
-            const mergedLocs = Array.from(locSet);
+
+            const mergedItems = [...items, ...toAdd]; // Merge existing items with new unique items
+            const locSet = new Set([...locations, ...locs]); // Merge locations into a set to avoid duplicates
+            const mergedLocs = Array.from(locSet); // Convert set back to array
+
             await AsyncStorage.setItem('inventory', JSON.stringify(mergedItems));
             await AsyncStorage.setItem('locations', JSON.stringify(mergedLocs));
+
             await loadItems();
             await loadLocations();
             Alert.alert('Importazione', `Importazione completata. Aggiunti ${toAdd.length} oggetti e relative immagini.`);
@@ -524,6 +584,7 @@ function AppInner() {
     }
   };
 
+  /* Delete all data: inventory, locations, images */
   const deleteAllData = async () => {
     Alert.alert(
       'Elimina tutto',
@@ -535,9 +596,11 @@ function AppInner() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Clear AsyncStorage entries
               await AsyncStorage.setItem('inventory', JSON.stringify([]));
               await AsyncStorage.setItem('locations', JSON.stringify([]));
               
+              // Delete images directory
               const baseDir: string = (FileSystem as any).documentDirectory || '';
               const imagesDir = `${baseDir}images/`;
               try {
@@ -549,6 +612,7 @@ function AppInner() {
                 console.warn('Could not delete images directory:', e);
               }
               
+              // Reload state
               await loadItems();
               await loadLocations();
               
@@ -563,6 +627,7 @@ function AppInner() {
     );
   };
 
+  /* --- CREATE / EDIT ITEM MODAL FUNCTIONS --- */
   const openModalForNewItem = () => {
     setEditingItem(null);
     setNewTitle('');
@@ -576,6 +641,7 @@ function AppInner() {
     setModalVisible(true);
   };
 
+  /* Open modal for editing an existing item */
   const openModalForEditItem = (item: InventoryItem) => {
     setEditingItem(item);
     setNewTitle(item.title);
@@ -589,6 +655,7 @@ function AppInner() {
     setModalVisible(true);
   };
 
+  /* Reset modal state */
   const resetModal = () => {
     setModalVisible(false);
     setEditingItem(null);
@@ -603,13 +670,16 @@ function AppInner() {
     setOriginalSnapshot(null);
     setLocationDropdownVisible(false);
     
-    // Pulisci anche la bozza se esiste
+    // Clear draft if exists
     setItemDraft(null);
     setShouldReopenItemModal(false);
   };
 
+  /* Check for unsaved changes in modal */
   const hasUnsavedChanges = () => {
-    if (!originalSnapshot) return false;
+    if (!originalSnapshot) return false; // If no snapshot, no changes to track
+
+    // Compare current state with original snapshot
     const changed = (
       newTitle !== originalSnapshot.title ||
       newQuantity !== originalSnapshot.quantity ||
@@ -620,6 +690,7 @@ function AppInner() {
     return changed;
   };
 
+  /* Confirm cancellation of modal with unsaved changes check */
   const confirmCancel = () => {
     if (!hasUnsavedChanges()) { resetModal(); return; }
     Alert.alert('Conferma Annullamento','Sei sicuro di voler annullare? Le modifiche non salvate andranno perse.',[
@@ -627,14 +698,18 @@ function AppInner() {
     ]);
   };
 
+  /* Confirm and save item (create or update) */
   const confirmAndSaveItem = () => {
     Alert.alert(editingItem ? 'Conferma salvataggio' : 'Conferma creazione', editingItem ? "Salvare le modifiche all'oggetto?" : 'Creare il nuovo oggetto?', [
       { text: 'Annulla', style: 'cancel' }, { text: 'Conferma', onPress: () => addOrUpdateItem(true) }
     ]);
   };
 
+  /* Add a new item or update an existing one */
   const addOrUpdateItem = async (confirmed = false) => {
-    if (!confirmed) return;
+    if (!confirmed) return; // Only proceed if confirmed
+
+    // Validate required fields
     let missingFields: string[] = [];
     if (!newTitle) missingFields.push('Titolo');
     if (!newQuantity) missingFields.push('Quantità');
@@ -642,17 +717,21 @@ function AppInner() {
     if (!newImages || newImages.length === 0) missingFields.push('Immagine/i');
     if (missingFields.length > 0) { Alert.alert('Errore', `Compila i seguenti campi obbligatori: ${missingFields.join(', ')}.`); return; }
 
+    // Save new location if it doesn't exist
     if (!locations.includes(newLocation)) { await saveLocations([...locations, newLocation]); }
 
+    // If editing, update the item
     if (editingItem) {
       const updatedItems = items.map(i => i.id === editingItem.id ? { ...i, title: newTitle, quantity: parseInt(newQuantity), location: newLocation, description: newDescription, images: newImages } : i);
       await saveItems(updatedItems);
       Alert.alert('Salvataggio Modifiche', 'Modifiche salvate con successo.');
       resetModal();
     } else {
+      // If creating, check for duplicates
       const titleLower = newTitle.trim().toLowerCase();
       const duplicatesAnyLocation = items.filter(i => i.title.trim().toLowerCase() === titleLower);
 
+      // No duplicates found, create new item
       if (duplicatesAnyLocation.length === 0) {
         const newItem: InventoryItem = {
           id: Date.now().toString(),
@@ -664,10 +743,12 @@ function AppInner() {
         };
         await saveItems([...items, newItem]);
         Alert.alert('Creazione Oggetto', `Oggetto "${newItem.title}" creato con successo in "${newLocation}".`);
+
         resetModal();
         return;
       }
 
+      // One duplicate found, ask user for action
       if (duplicatesAnyLocation.length === 1) {
         const target = duplicatesAnyLocation[0];
         Alert.alert(
@@ -676,6 +757,7 @@ function AppInner() {
           [
             { text: 'Annulla', style: 'cancel' },
             { text: `Aggrega a ${target.location}`, onPress: async () => {
+                // Aggregate quantity to existing item
                 const updated = items.map(i => i.id === target.id ? { ...i, quantity: i.quantity + parseInt(newQuantity) } : i);
                 await saveItems(updated);
                 Alert.alert('Quantità aggiornata', `La quantità è stata aggiunta all'oggetto "${target.title}" in "${target.location}".`);
@@ -683,6 +765,7 @@ function AppInner() {
               }
             },
             { text: `Crea comunque in "${newLocation}"`, onPress: async () => {
+                // Create new item anyway, even if in the same location
                 const newItem: InventoryItem = {
                   id: Date.now().toString(),
                   title: newTitle,
@@ -692,6 +775,7 @@ function AppInner() {
                   images: newImages,
                 };
                 await saveItems([...items, newItem]);
+
                 Alert.alert('Creazione Oggetto', `Oggetto "${newItem.title}" creato con successo in "${newLocation}".`);
                 resetModal();
               }
@@ -701,10 +785,11 @@ function AppInner() {
         return;
       }
 
+      // Multiple duplicates found, open duplicate picker
       if (duplicatesAnyLocation.length > 1) {
-        setDuplicateCandidates(duplicatesAnyLocation);
-        setDuplicateContextNewQuantity(parseInt(newQuantity));
-        setDuplicateContextMode('create');
+        setDuplicateCandidates(duplicatesAnyLocation); // Set candidates for duplicate selection
+        setDuplicateContextNewQuantity(parseInt(newQuantity)); // Set new quantity for context
+        setDuplicateContextMode('create'); // Set context mode to 'create'
         setModalVisible(false);
         setTimeout(() => setDuplicatePickerVisible(true), 200);
         return;
@@ -712,6 +797,7 @@ function AppInner() {
     }
   };
 
+  /* Handle duplicate candidate selection */
   const onDuplicateCandidatePress = (candidate: InventoryItem) => {
     if (duplicateContextMode === 'create') {
       Alert.alert(
@@ -722,6 +808,7 @@ function AppInner() {
           { text: 'Conferma', onPress: async () => {
             const updated = items.map(i => i.id === candidate.id ? { ...i, quantity: i.quantity + duplicateContextNewQuantity } : i);
             await saveItems(updated);
+
             Alert.alert('Quantità aggiornata', `La quantità è stata aggiunta all'oggetto "${candidate.title}" in "${candidate.location}".`);
             setDuplicatePickerVisible(false);
             setDuplicateCandidates([]);
@@ -734,9 +821,12 @@ function AppInner() {
       return;
     }
 
+    // Handle 'reassign' mode for duplicates
     if (duplicateContextMode === 'reassign') {
+      // Get the moving item based on stored ID
       const movingId = duplicateContextMovingItemId;
       if (!movingId) return;
+
       const movingItem = items.find(i => i.id === movingId);
       if (!movingItem) return;
 
@@ -748,6 +838,7 @@ function AppInner() {
           { text: 'Conferma', onPress: async () => {
             const updated = items.map(i => i.id === candidate.id ? { ...i, quantity: i.quantity + movingItem.quantity } : i).filter(i => i.id !== movingId);
             await saveItems(updated);
+
             Alert.alert('Operazione completata', `Quantità aggiunta a "${candidate.title}". Oggetto spostato rimosso.`);
             setDuplicatePickerVisible(false);
             setDuplicateCandidates([]);
@@ -761,15 +852,18 @@ function AppInner() {
     }
   };
 
+  /* Confirm and delete an item */
   const confirmAndDeleteItem = (id: string) => {
     Alert.alert('Conferma eliminazione','Sei sicuro di voler eliminare questo oggetto?',[ 
       { text: 'Annulla', style: 'cancel' },{ text: 'Elimina', style: 'destructive', onPress: async () => { await deleteItem(id); resetModal(); } }
     ]);
   };
 
+  /* Delete an item by ID */
   const deleteItem = async (id: string) => {
     const itemToDelete = items.find(i => i.id === id);
     const updatedItems = items.filter(i => i.id !== id);
+
     await saveItems(updatedItems);
     if (itemToDelete) Alert.alert('Eliminazione Oggetto', `Oggetto "${itemToDelete.title}" eliminato con successo.`);
   };
@@ -777,53 +871,54 @@ function AppInner() {
   const closeLocationManager = () => {
     setLocationMgrVisible(false);
     
-    // Se c'è una bozza salvata e il flag è attivo, riapri il modal di creazione
+    // Check if we need to reopen item modal with draft
     if (shouldReopenItemModal && itemDraft) {
       setTimeout(() => {
-        // Ripristina i dati dalla bozza
+        // Reset fields with draft data
         setNewTitle(itemDraft.title);
         setNewQuantity(itemDraft.quantity);
         setNewLocation(itemDraft.location);
         setNewDescription(itemDraft.description);
         setNewImages(itemDraft.images);
         
-        // Riapri modal creazione
+        // Reopen item modal
         setModalVisible(true);
         
-        // Reset flag e bozza
+        // Reset flag and draft
         setShouldReopenItemModal(false);
         setItemDraft(null);
       }, 300);
     } else {
-      // Se non c'è bozza o il flag non è attivo, pulisci comunque
+      // If no draft, just reset flags
       setShouldReopenItemModal(false);
       setItemDraft(null);
     }
   };
 
+  /* Open location manager modal */
   const saveDraftAndOpenLocationManager = () => {
-    // Salva lo stato corrente come bozza
+    // Save current item data as draft
     setItemDraft({
       title: newTitle,
       quantity: newQuantity,
       location: newLocation,
       description: newDescription,
-      images: newImages.slice(), // copia array
+      images: newImages.slice(), // Add a copy of images array
     });
     
-    // Imposta flag per riaprire dopo
+    // Set flag to reopen item modal later
     setShouldReopenItemModal(true);
     
-    // Chiudi modal creazione
+    // Close item modal
     setModalVisible(false);
     
-    // Apri gestione ubicazioni dopo un breve delay
+    // Open location manager after a short delay
     setTimeout(() => {
       openLocationManager();
     }, 300);
   };
 
-  // Location management functions (now in Location Manager modal)
+  /* Add a new location in location manager */
   const addLocationInMgr = async () => {
     const loc = newLocationNameInMgr.trim();
     if (!loc) {
@@ -834,15 +929,20 @@ function AppInner() {
       Alert.alert('Ubicazione già presente', 'Questa ubicazione esiste già.');
       return;
     }
+
+    // Add new location
     const newLocs = [...locations, loc];
+
+    // Save updated locations
     await saveLocations(newLocs);
-    setNewLocationNameInMgr('');
-    setAddingLocationInMgr(false);
+    setNewLocationNameInMgr(''); // Clear input
+    setAddingLocationInMgr(false); // Exit adding mode
     Alert.alert('Ubicazione creata', `Ubicazione "${loc}" aggiunta con successo.`);
   };
 
+  /* Confirm and delete a location */
   const confirmAndDeleteLocation = (loc: string) => {
-    const used = items.some(it => it.location === loc);
+    const used = items.some(it => it.location === loc); // Check if location is used
     if (used) {
       Alert.alert('Impossibile eliminare', `L'ubicazione "${loc}" contiene degli oggetti e non può essere eliminata.`);
       return;
@@ -853,19 +953,25 @@ function AppInner() {
     ]);
   };
 
+  /* Delete a location and update items */
   const deleteLocation = async (loc: string) => {
     const updatedLocations = locations.filter(l => l !== loc);
     await saveLocations(updatedLocations);
+
     const updatedItems = items.map(item => item.location === loc ? { ...item, location: '' } : item);
     await saveItems(updatedItems);
+
     if (newLocation === loc) setNewLocation('');
     if (selectedLocationForMgr === loc) setSelectedLocationForMgr(null);
     Alert.alert('Eliminazione Ubicazione', `Ubicazione "${loc}" eliminata correttamente.`);
   };
 
+  /* Confirm adjustment of item quantity */
   const handleConfirmAdjustment = () => {
     const adj = parseInt(adjustmentValue || '0', 10);
     if (isNaN(adj) || adj <= 0) { Alert.alert('Valore non valido', 'Inserisci un numero intero maggiore di 0.'); return; }
+    
+    // Calculate new quantity based on adjustment mode
     const current = parseInt(newQuantity || '0', 10);
     const newQty = adjustmentMode === 'add' ? current + adj : current - adj;
     if (newQty < 0) { Alert.alert('Errore quantità', 'La quantità risultante sarebbe negativa. Inserisci un valore più piccolo.'); return; }
@@ -875,6 +981,7 @@ function AppInner() {
     ]);
   };
 
+  /* Confirm renaming a location */
   const confirmRenameLocationInMgr = () => {
     const oldName = editingLocationInMgr;
     const newName = editingLocationNewNameInMgr.trim();
@@ -884,12 +991,14 @@ function AppInner() {
       return;
     }
     
+    // No change, the old and new names are the same
     if (newName === oldName) {
       setEditingLocationInMgr(null);
       setEditingLocationNewNameInMgr('');
       return;
     }
     
+    // Check if new name already exists
     if (locations.includes(newName)) {
       Alert.alert('Nome già esistente', 'Esiste già un\'altra ubicazione con questo nome. Scegli un nome diverso.');
       return;
@@ -903,15 +1012,19 @@ function AppInner() {
         { 
           text: 'Conferma',
           onPress: async () => {
+            // Update locations list
             const updatedLocations = locations.map(l => l === oldName ? newName : l);
             await saveLocations(updatedLocations);
             
+            // Update items assigned to the old location
             const updatedItems = items.map(item => item.location === oldName ? { ...item, location: newName } : item);
             await saveItems(updatedItems);
             
+            // Update state if needed
             if (newLocation === oldName) setNewLocation(newName);
             if (selectedLocationForMgr === oldName) setSelectedLocationForMgr(newName);
             
+            // Clear editing state
             setEditingLocationInMgr(null);
             setEditingLocationNewNameInMgr('');
             
@@ -922,7 +1035,7 @@ function AppInner() {
     );
   };
 
-  // --- Location Manager functions ---
+  /* Open location manager modal */
   const openLocationManager = () => {
     setSelectedLocationForMgr(null);
     setMgrSelectedItemIds([]);
@@ -934,56 +1047,71 @@ function AppInner() {
     setLocationMgrVisible(true);
   };
 
+  /* Toggle selection of an item in location manager */
   const toggleMgrSelectItem = (id: string) => {
     setMgrSelectedItemIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  /* Reassign selected items to target location */
   const reassignMgrItems = () => {
     if (!selectedLocationForMgr) { Alert.alert('Seleziona ubicazione','Scegli prima una ubicazione da cui prendere gli oggetti.'); return; }
     if (!mgrTargetLocation) { Alert.alert('Seleziona destinazione','Scegli una ubicazione di destinazione.'); return; }
     if (mgrTargetLocation === selectedLocationForMgr) { Alert.alert('Stessa ubicazione','La destinazione è identica all\'origine.'); return; }
     if (mgrSelectedItemIds.length === 0) { Alert.alert('Nessun oggetto selezionato','Seleziona almeno un oggetto da riassegnare.'); return; }
 
+    // Prepare queue and target
     const queue = mgrSelectedItemIds.slice();
     const target = mgrTargetLocation;
+
+    // Start reassignment process
     setReassignQueue(queue);
     setReassignTarget(target);
     setLocationMgrVisible(false);
-    setTimeout(() => processNextReassign(queue, target), 200);
+    setTimeout(() => processNextReassign(queue, target), 200); // Slight delay to ensure modal is closed
   };
 
+  /* Process the next item in the reassignment queue */
   const processNextReassign = async (queueParam?: string[], targetParam?: string | null) => {
+    // Use provided queue and target or fall back to state
     let queue = Array.isArray(queueParam) ? queueParam.slice() : reassignQueue.slice();
     const target = typeof targetParam !== 'undefined' ? targetParam : reassignTarget;
 
+    // Clear selection in location manager
     setMgrSelectedItemIds([]);
 
+    // If queue is empty, finish reassignment
     if (queue.length === 0) {
       setReassignTarget(null);
       setReassignQueue([]);
       return;
     }
 
+    // Process the next item in the queue
     const currentId = queue.shift()!;
     setReassignQueue(queue);
 
+    // Find the item to move
     const movingItem = items.find(i => i.id === currentId);
     if (!movingItem || !target) {
       setTimeout(() => processNextReassign(queue, target), 50);
       return;
     }
 
+    // Check for duplicates in the target location
     const titleLower = movingItem.title.trim().toLowerCase();
     const duplicatesInTarget = items.filter(i => i.title.trim().toLowerCase() === titleLower && i.location === target && i.id !== movingItem.id);
 
+    // No duplicates, proceed with reassignment
     if (duplicatesInTarget.length === 0) {
       const updated = items.map(i => i.id === movingItem.id ? { ...i, location: target } : i);
       await saveItems(updated);
+
       Alert.alert('Riassegnazione completata', `"${movingItem.title}" spostato in "${target}".`);
       setTimeout(() => processNextReassign(queue, target), 50);
       return;
     }
 
+    // One duplicate found, ask user for action
     if (duplicatesInTarget.length === 1) {
       const targetExisting = duplicatesInTarget[0];
       Alert.alert(
@@ -994,6 +1122,7 @@ function AppInner() {
           { text: `Aggrega a ${target}`, onPress: async () => {
               const updated = items.map(i => i.id === targetExisting.id ? { ...i, quantity: i.quantity + movingItem.quantity } : i).filter(i => i.id !== movingItem.id);
               await saveItems(updated);
+
               Alert.alert('Aggregazione completata', `Quantità aggiunta a "${targetExisting.title}". Oggetto spostato rimosso.`);
               setTimeout(() => processNextReassign(queue, target), 50);
             }
@@ -1001,6 +1130,7 @@ function AppInner() {
           { text: `Sposta comunque`, onPress: async () => {
               const updated = items.map(i => i.id === movingItem.id ? { ...i, location: target } : i);
               await saveItems(updated);
+
               Alert.alert('Spostamento completato', `"${movingItem.title}" spostato in "${target}".`);
               setTimeout(() => processNextReassign(queue, target), 50);
             }
@@ -1010,6 +1140,7 @@ function AppInner() {
       return;
     }
 
+    // Multiple duplicates found, open duplicate picker
     setDuplicateCandidates(duplicatesInTarget);
     setDuplicateContextMode('reassign');
     setDuplicateContextMovingItemId(movingItem.id);
@@ -1017,7 +1148,7 @@ function AppInner() {
     return;
   };
 
-  // --- UI and rendering ---
+  /* --- RENDERING COMPONENTS FOR FILTERS --- */
   useEffect(() => {
     const filtered = items.filter(item => 
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -1027,6 +1158,7 @@ function AppInner() {
     setFilteredItems(filtered);
   }, [searchQuery, items]);
 
+  /* Render a single inventory item in the list */
   const renderItem = ({ item }: { item: InventoryItem }) => (
     <TouchableOpacity 
       style={[
@@ -1072,6 +1204,7 @@ function AppInner() {
     </TouchableOpacity>
   );
 
+  /* Colors for light and dark mode --> They are all presetted */
   const Colors = {
     light: {
       background: '#f5f5f5',
@@ -1102,6 +1235,7 @@ function AppInner() {
   };
   const theme = isDarkMode ? Colors.dark : Colors.light;
 
+  /* Main component render */
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.searchContainer}>
@@ -1158,7 +1292,7 @@ function AppInner() {
       {/* Location Manager Modal */}
       <LocationManagerModal
         visible={locationMgrVisible}
-        onClose={closeLocationManager}  // <-- Usa la nuova funzione invece di () => setLocationMgrVisible(false)
+        onClose={closeLocationManager}
         locations={locations}
         items={items}
         addingLocationInMgr={addingLocationInMgr}
@@ -1240,12 +1374,13 @@ function AppInner() {
         openImagePicker={openImagePicker}
         confirmAndRemoveImage={confirmAndRemoveImage}
         showImageDebugActions={showImageDebugActions}
-        onGoToLocationManager={saveDraftAndOpenLocationManager}  // <-- Nuova prop
+        onGoToLocationManager={saveDraftAndOpenLocationManager}
       />
     </View>
   );
 }
 
+/* Wrap AppInner with ThemeProvider */
 export default function App() {
   return (
     <ThemeProvider>
@@ -1254,6 +1389,7 @@ export default function App() {
   );
 }
 
+/* Styles */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingTop: 50 },
   searchContainer: { padding: 10 },

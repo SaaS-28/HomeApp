@@ -172,10 +172,6 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
 
-  // Calcola larghezza immagine con padding
-  const cardPadding = 40; // 20px per lato della card
-  const imageWidth = screenWidth - cardPadding; // larghezza piena disponibile
-
   // ============================================
   // DYNAMIC STYLES
   // ============================================

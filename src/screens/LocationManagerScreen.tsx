@@ -8,7 +8,7 @@ import {
   TouchableOpacity, 
   TextInput
 } from 'react-native';
-import { useTheme } from '../contexts/ThemeContext'; // Import the ThemeContext
+import { useTheme } from '../contexts/ThemeContext';
 
 // ============================================
 // TYPES
@@ -151,7 +151,7 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
 
-  // Reset tutto quando il modal si apre
+  // Reset state when modal is opened
   React.useEffect(() => {
     if (visible) {
       setSelectedLocationForMgr(null);
@@ -160,15 +160,15 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
     }
   }, [visible]);
 
-  // Gestione della selezione dell'ubicazione con deselect
+  // Handle location selection for item reassignment
   const handleLocationSelect = (loc: string) => {
     if (selectedLocationForMgr === loc) {
-      // Deseleziona tutto
+      // Deselect location
       setSelectedLocationForMgr(null);
       setMgrSelectedItemIds([]);
       setMgrTargetLocation(null);
     } else {
-      // Seleziona nuova ubicazione
+      // Select new location
       setSelectedLocationForMgr(loc);
       setMgrSelectedItemIds([]);
       setMgrTargetLocation(null);
@@ -491,7 +491,7 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
               ))}
             </ScrollView>
 
-            {/* Punto 2: mostra solo se un'ubicazione è selezionata */}
+            {/* Shows only if the locaation is selected */}
             {selectedLocationForMgr && (
               <>
                 <Text style={dynamicStyles.sectionLabel}>
@@ -524,7 +524,7 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
               </>
             )}
 
-            {/* Punto 3: mostra solo se almeno un oggetto è selezionato */}
+            {/* Shows only if at least one object is being selected */}
             {mgrSelectedItemIds.length > 0 && (
               <>
                 <Text style={dynamicStyles.sectionLabel}>

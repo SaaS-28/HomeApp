@@ -26,6 +26,7 @@ interface ThemeColors {
   footer: string;
 }
 
+/* Props for SettingsModal component */
 interface SettingsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -88,17 +89,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   importDatabase,
   deleteAllData 
 }) => {
-  //Using ThemeContext
+  // Using ThemeContext
   const { themePreference, setThemePreference, systemScheme } = useTheme();
 
-  //Check if dark mode is active
+  // Check if dark mode is active
   const isDarkMode = themePreference === 'auto' 
     ? systemScheme === 'dark' 
     : themePreference === 'dark';
 
   const theme = isDarkMode ? Colors.dark : Colors.light;
 
-  //Dynamic styles
+  // Dynamic styles
   const dynamicStyles = {
     container: {
       flex: 1,
@@ -234,7 +235,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     },
   };
 
-  // when the user selects a theme option --> update the context
+  // When the user selects a theme option --> update the context
   const onSelectTheme = async (pref: ThemePreference) => {
     await setThemePreference(pref);
   };
