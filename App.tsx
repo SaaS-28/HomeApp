@@ -89,6 +89,16 @@ function AppInner() {
   const [imageToView, setImageToView] = useState<string | null>(null);
   const [originalSnapshot, setOriginalSnapshot] = useState<any>(null);
 
+  // Draft state per salvare temporaneamente l'oggetto in creazione
+  const [itemDraft, setItemDraft] = useState<{
+    title: string;
+    quantity: string;
+    location: string;
+    description: string;
+    images: string[];
+  } | null>(null);
+  const [shouldReopenItemModal, setShouldReopenItemModal] = useState(false);
+
   // Load items and locations once on mount
   useEffect(() => {
     loadItems();
@@ -592,6 +602,10 @@ function AppInner() {
     setImageToView(null);
     setOriginalSnapshot(null);
     setLocationDropdownVisible(false);
+    
+    // Pulisci anche la bozza se esiste
+    setItemDraft(null);
+    setShouldReopenItemModal(false);
   };
 
   const hasUnsavedChanges = () => {
@@ -760,6 +774,55 @@ function AppInner() {
     if (itemToDelete) Alert.alert('Eliminazione Oggetto', `Oggetto "${itemToDelete.title}" eliminato con successo.`);
   };
 
+  const closeLocationManager = () => {
+    setLocationMgrVisible(false);
+    
+    // Se c'è una bozza salvata e il flag è attivo, riapri il modal di creazione
+    if (shouldReopenItemModal && itemDraft) {
+      setTimeout(() => {
+        // Ripristina i dati dalla bozza
+        setNewTitle(itemDraft.title);
+        setNewQuantity(itemDraft.quantity);
+        setNewLocation(itemDraft.location);
+        setNewDescription(itemDraft.description);
+        setNewImages(itemDraft.images);
+        
+        // Riapri modal creazione
+        setModalVisible(true);
+        
+        // Reset flag e bozza
+        setShouldReopenItemModal(false);
+        setItemDraft(null);
+      }, 300);
+    } else {
+      // Se non c'è bozza o il flag non è attivo, pulisci comunque
+      setShouldReopenItemModal(false);
+      setItemDraft(null);
+    }
+  };
+
+  const saveDraftAndOpenLocationManager = () => {
+    // Salva lo stato corrente come bozza
+    setItemDraft({
+      title: newTitle,
+      quantity: newQuantity,
+      location: newLocation,
+      description: newDescription,
+      images: newImages.slice(), // copia array
+    });
+    
+    // Imposta flag per riaprire dopo
+    setShouldReopenItemModal(true);
+    
+    // Chiudi modal creazione
+    setModalVisible(false);
+    
+    // Apri gestione ubicazioni dopo un breve delay
+    setTimeout(() => {
+      openLocationManager();
+    }, 300);
+  };
+
   // Location management functions (now in Location Manager modal)
   const addLocationInMgr = async () => {
     const loc = newLocationNameInMgr.trim();
@@ -861,7 +924,7 @@ function AppInner() {
 
   // --- Location Manager functions ---
   const openLocationManager = () => {
-    setSelectedLocationForMgr(locations.length > 0 ? locations[0] : null);
+    setSelectedLocationForMgr(null);
     setMgrSelectedItemIds([]);
     setMgrTargetLocation(null);
     setAddingLocationInMgr(false);
@@ -1095,7 +1158,7 @@ function AppInner() {
       {/* Location Manager Modal */}
       <LocationManagerModal
         visible={locationMgrVisible}
-        onClose={() => setLocationMgrVisible(false)}
+        onClose={closeLocationManager}  // <-- Usa la nuova funzione invece di () => setLocationMgrVisible(false)
         locations={locations}
         items={items}
         addingLocationInMgr={addingLocationInMgr}
@@ -1177,6 +1240,7 @@ function AppInner() {
         openImagePicker={openImagePicker}
         confirmAndRemoveImage={confirmAndRemoveImage}
         showImageDebugActions={showImageDebugActions}
+        onGoToLocationManager={saveDraftAndOpenLocationManager}  // <-- Nuova prop
       />
     </View>
   );

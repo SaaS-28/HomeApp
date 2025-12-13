@@ -78,6 +78,7 @@ interface ItemEditorModalProps {
   openImagePicker: () => void;
   confirmAndRemoveImage: (uri: string) => void;
   showImageDebugActions: (uri: string) => void;
+  onGoToLocationManager: () => void;
 }
 
 // ============================================
@@ -154,7 +155,8 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   resetModal,
   openImagePicker,
   confirmAndRemoveImage,
-  showImageDebugActions
+  showImageDebugActions,
+  onGoToLocationManager
 }) => {
   // Using ThemeContext
   const { themePreference, systemScheme } = useTheme();
@@ -169,6 +171,10 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
     : themePreference === 'dark';
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
+
+  // Calcola larghezza immagine con padding
+  const cardPadding = 40; // 20px per lato della card
+  const imageWidth = screenWidth - cardPadding; // larghezza piena disponibile
 
   // ============================================
   // DYNAMIC STYLES
@@ -304,6 +310,7 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
       borderRadius: 16,
       alignItems: 'center' as const,
       justifyContent: 'center' as const,
+      zIndex: 10,
     },
     imageRemoveBtnText: {
       color: '#fff',
@@ -311,7 +318,6 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
       fontWeight: 'bold' as const,
     },
     imageAddBtn: {
-      width: screenWidth - 60,
       height: 200,
       backgroundColor: theme.primary,
       borderRadius: 12,
@@ -468,12 +474,13 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                 {adjustmentMode && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TextInput 
-                      placeholder={adjustmentMode === 'add' ? 'Quantità da aggiungere' : 'Quantità da rimuovere'} 
+                      placeholder={adjustmentMode === 'add' ? 'Aggiungi' : 'Rimuovi'} 
                       value={adjustmentValue} 
                       onChangeText={setAdjustmentValue} 
                       style={[dynamicStyles.formInput, { flex: 1, marginBottom: 0 }]} 
                       keyboardType="numeric"
                       placeholderTextColor={theme.placeholder}
+                      maxLength={10}
                     />
                     <TouchableOpacity 
                       style={dynamicStyles.adjConfirmBtn}
@@ -512,9 +519,30 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                 <View style={dynamicStyles.dropdownListLarge}>
                   <ScrollView style={{ maxHeight: 150 }}>
                     {locations.length === 0 ? (
-                      <Text style={{ padding: 10, fontStyle: 'italic', color: theme.placeholder }}>
-                        Nessuna ubicazione. Creane una in "Gestione Ubicazioni".
-                      </Text>
+                      <View style={{ padding: 16 }}>
+                        <Text style={{ 
+                          fontStyle: 'italic', 
+                          color: theme.textSecondary,
+                          marginBottom: 12,
+                          textAlign: 'center'
+                        }}>
+                          Nessuna ubicazione disponibile
+                        </Text>
+                        <TouchableOpacity
+                          style={{
+                            backgroundColor: theme.primary,
+                            paddingVertical: 12,
+                            paddingHorizontal: 16,
+                            borderRadius: 8,
+                            alignItems: 'center'
+                          }}
+                          onPress={onGoToLocationManager}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>
+                            📍 Gestisci Ubicazioni
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     ) : (
                       locations.map(loc => (
                         <TouchableOpacity 
@@ -549,20 +577,31 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
               <ScrollView 
                 horizontal 
                 pagingEnabled 
-                showsHorizontalScrollIndicator={false} 
-                style={{ marginBottom: 0 }}
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={screenWidth - 80}
+                decelerationRate="fast"
+                style={{ marginHorizontal: -20, marginBottom: -20 }}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}
               >
-                {newImages.map(uri => (
-                  <View key={uri} style={{ position: 'relative', marginRight: 10 }}>
+                {newImages.map((uri, index) => (
+                  <View 
+                    key={uri} 
+                    style={{ 
+                      width: screenWidth - 80,
+                      marginRight: index < newImages.length - 1 || newImages.length < 5 ? 10 : 0,
+                      position: 'relative'
+                    }}
+                  >
                     <TouchableOpacity 
                       onPress={() => setImageToView(uri)} 
                       onLongPress={() => { if (debugMode) showImageDebugActions(uri); }} 
                       delayLongPress={2000}
+                      activeOpacity={0.9}
                     >
                       <Image 
                         source={{ uri }} 
                         style={{ 
-                          width: screenWidth - 60, 
+                          width: '100%', 
                           height: 200, 
                           borderRadius: 12, 
                           resizeMode: 'cover' 
@@ -578,12 +617,21 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                   </View>
                 ))}
                 {newImages.length < 5 && (
-                  <TouchableOpacity 
-                    style={dynamicStyles.imageAddBtn} 
-                    onPress={openImagePicker}
-                  >
-                    <Text style={{ fontSize: 32, color: '#fff' }}>+</Text>
-                  </TouchableOpacity>
+                  <View style={{ width: screenWidth - 80 }}>
+                    <TouchableOpacity 
+                      style={{ 
+                        width: '100%',
+                        height: 200,
+                        backgroundColor: theme.primary,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }} 
+                      onPress={openImagePicker}
+                    >
+                      <Text style={{ fontSize: 32, color: '#fff' }}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </ScrollView>
             </View>

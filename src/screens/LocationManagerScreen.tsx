@@ -151,6 +151,30 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
 
+  // Reset tutto quando il modal si apre
+  React.useEffect(() => {
+    if (visible) {
+      setSelectedLocationForMgr(null);
+      setMgrSelectedItemIds([]);
+      setMgrTargetLocation(null);
+    }
+  }, [visible]);
+
+  // Gestione della selezione dell'ubicazione con deselect
+  const handleLocationSelect = (loc: string) => {
+    if (selectedLocationForMgr === loc) {
+      // Deseleziona tutto
+      setSelectedLocationForMgr(null);
+      setMgrSelectedItemIds([]);
+      setMgrTargetLocation(null);
+    } else {
+      // Seleziona nuova ubicazione
+      setSelectedLocationForMgr(loc);
+      setMgrSelectedItemIds([]);
+      setMgrTargetLocation(null);
+    }
+  };
+
   // ============================================
   // DYNAMIC STYLES
   // ============================================
@@ -458,10 +482,7 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
                     dynamicStyles.locationChip, 
                     selectedLocationForMgr === loc && dynamicStyles.locationChipActive
                   ]} 
-                  onPress={() => { 
-                    setSelectedLocationForMgr(loc); 
-                    setMgrSelectedItemIds([]); 
-                  }}
+                  onPress={() => handleLocationSelect(loc)}
                 >
                   <Text style={{ color: selectedLocationForMgr === loc ? theme.chipActiveText : theme.text }}>
                     {loc}
@@ -470,70 +491,74 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
               ))}
             </ScrollView>
 
-            <Text style={dynamicStyles.sectionLabel}>
-              2. Seleziona oggetti da spostare:
-            </Text>
-            <View style={{ maxHeight: 200, marginBottom: 15 }}>
-              <ScrollView>
-                {selectedLocationForMgr ? (
-                  items.filter(it => it.location === selectedLocationForMgr).length === 0 ? (
-                    <Text style={{ fontStyle: 'italic', color: theme.textSecondary }}>
-                      Nessun oggetto in questa ubicazione
-                    </Text>
-                  ) : (
-                    items.filter(it => it.location === selectedLocationForMgr).map(it => (
-                      <TouchableOpacity 
-                        key={it.id} 
-                        style={dynamicStyles.mgrItemRow} 
-                        onPress={() => toggleMgrSelectItem(it.id)}
-                      >
-                        <View style={dynamicStyles.checkbox}>
-                          {mgrSelectedItemIds.includes(it.id) && (
-                            <View style={dynamicStyles.checkboxChecked} />
-                          )}
-                        </View>
-                        <Text style={{ flex: 1, color: theme.text }}>{it.title} (qta: {it.quantity})</Text>
-                      </TouchableOpacity>
-                    ))
-                  )
-                ) : (
-                  <Text style={{ fontStyle: 'italic', color: theme.textSecondary }}>
-                    Seleziona prima un'ubicazione di origine
-                  </Text>
-                )}
-              </ScrollView>
-            </View>
+            {/* Punto 2: mostra solo se un'ubicazione è selezionata */}
+            {selectedLocationForMgr && (
+              <>
+                <Text style={dynamicStyles.sectionLabel}>
+                  2. Seleziona oggetti da spostare:
+                </Text>
+                <View style={{ maxHeight: 200, marginBottom: 15 }}>
+                  <ScrollView>
+                    {items.filter(it => it.location === selectedLocationForMgr).length === 0 ? (
+                      <Text style={{ fontStyle: 'italic', color: theme.textSecondary }}>
+                        Nessun oggetto in questa ubicazione
+                      </Text>
+                    ) : (
+                      items.filter(it => it.location === selectedLocationForMgr).map(it => (
+                        <TouchableOpacity 
+                          key={it.id} 
+                          style={dynamicStyles.mgrItemRow} 
+                          onPress={() => toggleMgrSelectItem(it.id)}
+                        >
+                          <View style={dynamicStyles.checkbox}>
+                            {mgrSelectedItemIds.includes(it.id) && (
+                              <View style={dynamicStyles.checkboxChecked} />
+                            )}
+                          </View>
+                          <Text style={{ flex: 1, color: theme.text }}>{it.title} (qta: {it.quantity})</Text>
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </ScrollView>
+                </View>
+              </>
+            )}
 
-            <Text style={dynamicStyles.sectionLabel}>
-              3. Seleziona ubicazione di destinazione:
-            </Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
-              style={{ marginBottom: 15 }}
-            >
-              {locations.filter(l => l !== selectedLocationForMgr).map(l => (
-                <TouchableOpacity 
-                  key={l} 
-                  style={[
-                    dynamicStyles.locationChipSmall, 
-                    mgrTargetLocation === l && dynamicStyles.locationChipActive
-                  ]} 
-                  onPress={() => setMgrTargetLocation(l)}
+            {/* Punto 3: mostra solo se almeno un oggetto è selezionato */}
+            {mgrSelectedItemIds.length > 0 && (
+              <>
+                <Text style={dynamicStyles.sectionLabel}>
+                  3. Seleziona ubicazione di destinazione:
+                </Text>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false} 
+                  style={{ marginBottom: 15 }}
                 >
-                  <Text style={{ color: mgrTargetLocation === l ? theme.chipActiveText : theme.text }}>
-                    {l}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {locations.filter(l => l !== selectedLocationForMgr).map(l => (
+                    <TouchableOpacity 
+                      key={l} 
+                      style={[
+                        dynamicStyles.locationChipSmall, 
+                        mgrTargetLocation === l && dynamicStyles.locationChipActive
+                      ]} 
+                      onPress={() => setMgrTargetLocation(l)}
+                    >
+                      <Text style={{ color: mgrTargetLocation === l ? theme.chipActiveText : theme.text }}>
+                        {l}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
 
-            <TouchableOpacity 
-              style={dynamicStyles.reassignBtn} 
-              onPress={reassignMgrItems}
-            >
-              <Text style={dynamicStyles.reassignBtnText}>Sposta oggetti selezionati</Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={dynamicStyles.reassignBtn} 
+                  onPress={reassignMgrItems}
+                >
+                  <Text style={dynamicStyles.reassignBtnText}>Sposta oggetti selezionati</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
           {/* Close Button */}
