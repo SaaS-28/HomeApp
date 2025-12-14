@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -6,9 +6,13 @@ import {
   SafeAreaView, 
   ScrollView, 
   TouchableOpacity, 
-  TextInput
+  TextInput,
+  Animated,
+  Dimensions
 } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
+
+const screenWidth = Dimensions.get('window').width;
 
 // ============================================
 // TYPES
@@ -46,6 +50,7 @@ interface LocationManagerModalProps {
   onClose: () => void;
   locations: string[];
   items: Item[];
+  openedFrom: 'button' | 'itemModal';
   addingLocationInMgr: boolean;
   setAddingLocationInMgr: (value: boolean) => void;
   newLocationNameInMgr: string;
@@ -121,6 +126,7 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
   onClose,
   locations,
   items,
+  openedFrom,
   addingLocationInMgr,
   setAddingLocationInMgr,
   newLocationNameInMgr,
@@ -150,6 +156,42 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
     : themePreference === 'dark';
   
   const theme: ThemeColors = isDarkMode ? Colors.dark : Colors.light;
+
+  const slideAnim = useRef(new Animated.Value(screenWidth)).current;
+
+  useEffect(() => {
+    if (openedFrom === 'itemModal') {
+      if (visible) {
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.timing(slideAnim, {
+          toValue: screenWidth,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      }
+    }
+  }, [visible, openedFrom]);
+
+    const handleClose = () => {
+    if (openedFrom === 'itemModal') {
+      // Animate slide out
+      Animated.timing(slideAnim, {
+        toValue: screenWidth,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        onClose(); // Caall onClose after animation completes
+      });
+    } else {
+      // If opened from button, just close normally
+      onClose();
+    }
+  };
 
   // Reset state when modal is opened
   React.useEffect(() => {
@@ -349,227 +391,259 @@ const LocationManagerModal: React.FC<LocationManagerModalProps> = ({
     },
   };
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={dynamicStyles.container}>
-        <ScrollView 
-          style={{ flex: 1 }} 
-          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-        >
-          {/* Header */}
-          <View style={dynamicStyles.header}>
-            <Text style={dynamicStyles.headerTitle}>Gestione Ubicazioni</Text>
-            <View style={dynamicStyles.headerUnderline} />
+  const content = (
+    <SafeAreaView style={dynamicStyles.container}>
+      <ScrollView 
+        style={{ flex: 1 }} 
+        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+      >
+        {/* Header */}
+        <View style={dynamicStyles.header}>
+          <Text style={dynamicStyles.headerTitle}>Gestione Ubicazioni</Text>
+          <View style={dynamicStyles.headerUnderline} />
+        </View>
+
+        {/* List all locations */}
+        <View style={dynamicStyles.sectionCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
+            <Text style={dynamicStyles.sectionTitle}>Tutte le ubicazioni ({locations.length})</Text>
+            {!addingLocationInMgr && (
+              <TouchableOpacity 
+                style={dynamicStyles.addButton}
+                onPress={() => setAddingLocationInMgr(true)}
+              >
+                <Text style={dynamicStyles.addButtonText}>+ Aggiungi</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {/* List all locations */}
-          <View style={dynamicStyles.sectionCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 }}>
-              <Text style={dynamicStyles.sectionTitle}>Tutte le ubicazioni ({locations.length})</Text>
-              {!addingLocationInMgr && (
+          {addingLocationInMgr && (
+            <View style={{ marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+              <TextInput
+                placeholder="Nome ubicazione"
+                placeholderTextColor={theme.placeholder}
+                value={newLocationNameInMgr}
+                onChangeText={setNewLocationNameInMgr}
+                style={dynamicStyles.modalInput}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <TouchableOpacity 
-                  style={dynamicStyles.addButton}
-                  onPress={() => setAddingLocationInMgr(true)}
+                  style={[dynamicStyles.button, { flex: 1, marginRight: 5 }]}
+                  onPress={addLocationInMgr}
                 >
-                  <Text style={dynamicStyles.addButtonText}>+ Aggiungi</Text>
+                  <Text style={dynamicStyles.buttonText}>Aggiungi</Text>
                 </TouchableOpacity>
-              )}
-            </View>
-
-            {addingLocationInMgr && (
-              <View style={{ marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-                <TextInput
-                  placeholder="Nome ubicazione"
-                  placeholderTextColor={theme.placeholder}
-                  value={newLocationNameInMgr}
-                  onChangeText={setNewLocationNameInMgr}
-                  style={dynamicStyles.modalInput}
-                  autoFocus
-                />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <TouchableOpacity 
-                    style={[dynamicStyles.button, { flex: 1, marginRight: 5 }]}
-                    onPress={addLocationInMgr}
-                  >
-                    <Text style={dynamicStyles.buttonText}>Aggiungi</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[dynamicStyles.buttonGray, { flex: 1, marginLeft: 5 }]}
-                    onPress={() => {
-                      setAddingLocationInMgr(false);
-                      setNewLocationNameInMgr('');
-                    }}
-                  >
-                    <Text style={dynamicStyles.buttonText}>Annulla</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity 
+                  style={[dynamicStyles.buttonGray, { flex: 1, marginLeft: 5 }]}
+                  onPress={() => {
+                    setAddingLocationInMgr(false);
+                    setNewLocationNameInMgr('');
+                  }}
+                >
+                  <Text style={dynamicStyles.buttonText}>Annulla</Text>
+                </TouchableOpacity>
               </View>
-            )}
+            </View>
+          )}
 
-            {locations.length === 0 ? (
-              <Text style={dynamicStyles.emptyText}>
-                Nessuna ubicazione presente. Creane una con il pulsante + Aggiungi.
-              </Text>
-            ) : (
-              locations.map(loc => (
-                <View key={loc} style={dynamicStyles.locationItemRow}>
-                  {editingLocationInMgr === loc ? (
-                    <View style={{ flex: 1 }}>
-                      <TextInput
-                        value={editingLocationNewNameInMgr}
-                        onChangeText={setEditingLocationNewNameInMgr}
-                        style={[dynamicStyles.modalInput, { marginBottom: 10 }]}
-                        autoFocus
-                        placeholderTextColor={theme.placeholder}
-                      />
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                        <TouchableOpacity 
-                          style={[dynamicStyles.button, { flex: 1, marginRight: 5 }]}
-                          onPress={confirmRenameLocationInMgr}
-                        >
-                          <Text style={dynamicStyles.buttonText}>Salva</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[dynamicStyles.buttonGray, { flex: 1, marginLeft: 5 }]}
-                          onPress={() => {
-                            setEditingLocationInMgr(null);
-                            setEditingLocationNewNameInMgr('');
-                          }}
-                        >
-                          <Text style={dynamicStyles.buttonText}>Annulla</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <>
-                      <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: theme.text }}>{loc}</Text>
+          {locations.length === 0 ? (
+            <Text style={dynamicStyles.emptyText}>
+              Nessuna ubicazione presente. Creane una con il pulsante + Aggiungi.
+            </Text>
+          ) : (
+            locations.map(loc => (
+              <View key={loc} style={dynamicStyles.locationItemRow}>
+                {editingLocationInMgr === loc ? (
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      value={editingLocationNewNameInMgr}
+                      onChangeText={setEditingLocationNewNameInMgr}
+                      style={[dynamicStyles.modalInput, { marginBottom: 10 }]}
+                      autoFocus
+                      placeholderTextColor={theme.placeholder}
+                    />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                       <TouchableOpacity 
-                        style={dynamicStyles.iconBtn} 
+                        style={[dynamicStyles.button, { flex: 1, marginRight: 5 }]}
+                        onPress={confirmRenameLocationInMgr}
+                      >
+                        <Text style={dynamicStyles.buttonText}>Salva</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[dynamicStyles.buttonGray, { flex: 1, marginLeft: 5 }]}
                         onPress={() => {
-                          setEditingLocationInMgr(loc);
-                          setEditingLocationNewNameInMgr(loc);
+                          setEditingLocationInMgr(null);
+                          setEditingLocationNewNameInMgr('');
                         }}
                       >
-                        <Text style={{ fontSize: 18 }}>✏️</Text>
+                        <Text style={dynamicStyles.buttonText}>Annulla</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={dynamicStyles.iconBtn} 
-                        onPress={() => confirmAndDeleteLocation(loc)}
-                      >
-                        <Text style={{ fontSize: 18 }}>🗑️</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              ))
-            )}
-          </View>
-
-          {/* Reassign items section */}
-          <View style={dynamicStyles.sectionCard}>
-            <Text style={dynamicStyles.sectionTitle}>Sposta oggetti tra ubicazioni</Text>
-            
-            <Text style={dynamicStyles.sectionLabel}>1. Seleziona ubicazione di origine:</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
-              style={{ marginBottom: 15 }}
-            >
-              {locations.map(loc => (
-                <TouchableOpacity 
-                  key={loc} 
-                  style={[
-                    dynamicStyles.locationChip, 
-                    selectedLocationForMgr === loc && dynamicStyles.locationChipActive
-                  ]} 
-                  onPress={() => handleLocationSelect(loc)}
-                >
-                  <Text style={{ color: selectedLocationForMgr === loc ? theme.chipActiveText : theme.text }}>
-                    {loc}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Shows only if the locaation is selected */}
-            {selectedLocationForMgr && (
-              <>
-                <Text style={dynamicStyles.sectionLabel}>
-                  2. Seleziona oggetti da spostare:
-                </Text>
-                <View style={{ maxHeight: 200, marginBottom: 15 }}>
-                  <ScrollView>
-                    {items.filter(it => it.location === selectedLocationForMgr).length === 0 ? (
-                      <Text style={{ fontStyle: 'italic', color: theme.textSecondary }}>
-                        Nessun oggetto in questa ubicazione
-                      </Text>
-                    ) : (
-                      items.filter(it => it.location === selectedLocationForMgr).map(it => (
-                        <TouchableOpacity 
-                          key={it.id} 
-                          style={dynamicStyles.mgrItemRow} 
-                          onPress={() => toggleMgrSelectItem(it.id)}
-                        >
-                          <View style={dynamicStyles.checkbox}>
-                            {mgrSelectedItemIds.includes(it.id) && (
-                              <View style={dynamicStyles.checkboxChecked} />
-                            )}
-                          </View>
-                          <Text style={{ flex: 1, color: theme.text }}>{it.title} (qta: {it.quantity})</Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </ScrollView>
-                </View>
-              </>
-            )}
-
-            {/* Shows only if at least one object is being selected */}
-            {mgrSelectedItemIds.length > 0 && (
-              <>
-                <Text style={dynamicStyles.sectionLabel}>
-                  3. Seleziona ubicazione di destinazione:
-                </Text>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false} 
-                  style={{ marginBottom: 15 }}
-                >
-                  {locations.filter(l => l !== selectedLocationForMgr).map(l => (
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={{ flex: 1, fontSize: 16, fontWeight: '500', color: theme.text }}>{loc}</Text>
                     <TouchableOpacity 
-                      key={l} 
-                      style={[
-                        dynamicStyles.locationChipSmall, 
-                        mgrTargetLocation === l && dynamicStyles.locationChipActive
-                      ]} 
-                      onPress={() => setMgrTargetLocation(l)}
+                      style={dynamicStyles.iconBtn} 
+                      onPress={() => {
+                        setEditingLocationInMgr(loc);
+                        setEditingLocationNewNameInMgr(loc);
+                      }}
                     >
-                      <Text style={{ color: mgrTargetLocation === l ? theme.chipActiveText : theme.text }}>
-                        {l}
-                      </Text>
+                      <Text style={{ fontSize: 18 }}>✏️</Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                    <TouchableOpacity 
+                      style={dynamicStyles.iconBtn} 
+                      onPress={() => confirmAndDeleteLocation(loc)}
+                    >
+                      <Text style={{ fontSize: 18 }}>🗑️</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            ))
+          )}
+        </View>
 
-                <TouchableOpacity 
-                  style={dynamicStyles.reassignBtn} 
-                  onPress={reassignMgrItems}
-                >
-                  <Text style={dynamicStyles.reassignBtnText}>Sposta oggetti selezionati</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-
-          {/* Close Button */}
-          <TouchableOpacity 
-            style={dynamicStyles.closeButton}
-            onPress={onClose}
+        {/* Reassign items section */}
+        <View style={dynamicStyles.sectionCard}>
+          <Text style={dynamicStyles.sectionTitle}>Sposta oggetti tra ubicazioni</Text>
+          
+          <Text style={dynamicStyles.sectionLabel}>1. Seleziona ubicazione di origine:</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={{ marginBottom: 15 }}
           >
-            <Text style={dynamicStyles.closeButtonText}>Chiudi</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
+            {locations.map(loc => (
+              <TouchableOpacity 
+                key={loc} 
+                style={[
+                  dynamicStyles.locationChip, 
+                  selectedLocationForMgr === loc && dynamicStyles.locationChipActive
+                ]} 
+                onPress={() => handleLocationSelect(loc)}
+              >
+                <Text style={{ color: selectedLocationForMgr === loc ? theme.chipActiveText : theme.text }}>
+                  {loc}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Shows only if the locaation is selected */}
+          {selectedLocationForMgr && (
+            <>
+              <Text style={dynamicStyles.sectionLabel}>
+                2. Seleziona oggetti da spostare:
+              </Text>
+              <View style={{ maxHeight: 200, marginBottom: 15 }}>
+                <ScrollView>
+                  {items.filter(it => it.location === selectedLocationForMgr).length === 0 ? (
+                    <Text style={{ fontStyle: 'italic', color: theme.textSecondary }}>
+                      Nessun oggetto in questa ubicazione
+                    </Text>
+                  ) : (
+                    items.filter(it => it.location === selectedLocationForMgr).map(it => (
+                      <TouchableOpacity 
+                        key={it.id} 
+                        style={dynamicStyles.mgrItemRow} 
+                        onPress={() => toggleMgrSelectItem(it.id)}
+                      >
+                        <View style={dynamicStyles.checkbox}>
+                          {mgrSelectedItemIds.includes(it.id) && (
+                            <View style={dynamicStyles.checkboxChecked} />
+                          )}
+                        </View>
+                        <Text style={{ flex: 1, color: theme.text }}>{it.title} (qta: {it.quantity})</Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            </>
+          )}
+
+          {/* Shows only if at least one object is being selected */}
+          {mgrSelectedItemIds.length > 0 && (
+            <>
+              <Text style={dynamicStyles.sectionLabel}>
+                3. Seleziona ubicazione di destinazione:
+              </Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={{ marginBottom: 15 }}
+              >
+                {locations.filter(l => l !== selectedLocationForMgr).map(l => (
+                  <TouchableOpacity 
+                    key={l} 
+                    style={[
+                      dynamicStyles.locationChipSmall, 
+                      mgrTargetLocation === l && dynamicStyles.locationChipActive
+                    ]} 
+                    onPress={() => setMgrTargetLocation(l)}
+                  >
+                    <Text style={{ color: mgrTargetLocation === l ? theme.chipActiveText : theme.text }}>
+                      {l}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity 
+                style={dynamicStyles.reassignBtn} 
+                onPress={reassignMgrItems}
+              >
+                <Text style={dynamicStyles.reassignBtnText}>Sposta oggetti selezionati</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* Close Button */}
+        <TouchableOpacity 
+          style={dynamicStyles.closeButton}
+          onPress={handleClose}
+        >
+          <Text style={dynamicStyles.closeButtonText}>Chiudi</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  )
+
+  if (openedFrom === 'itemModal') {
+    if (!visible) return null;
+    
+    return (
+      <Animated.View 
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: theme.background,
+          transform: [{ translateX: slideAnim }],
+          zIndex: 1000,
+        }}
+      >
+        {content}
+      </Animated.View>
+    );
+  }
+
+  // Altrimenti usa il Modal wrapper normale
+  return (
+    <Modal 
+      visible={visible} 
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={dynamicStyles.container}>
+        {content}
+      </View>
     </Modal>
   );
 };

@@ -70,6 +70,8 @@ function AppInner() {
   const [originalSnapshot, setOriginalSnapshot] = useState<any>(null); // Snapshot of original item data for change detection
 
   const [shouldReopenItemModal, setShouldReopenItemModal] = useState(false); // Flag to reopen item modal after location manager
+  const [locationMgrOpenedFrom, setLocationMgrOpenedFrom] = useState<'button' | 'itemModal'>('button'); // Context of location manager opening
+  const [itemModalTemporarilyHidden, setItemModalTemporarilyHidden] = useState(false); // Flag for temporarily hiding item modal
 
   /* ===== REASSING QUANTITY MODAL ===== */
   const [duplicatePickerVisible, setDuplicatePickerVisible] = useState(false); // Duplicate picker modal visibility
@@ -868,31 +870,36 @@ function AppInner() {
     if (itemToDelete) Alert.alert('Eliminazione Oggetto', `Oggetto "${itemToDelete.title}" eliminato con successo.`);
   };
 
+  /* Close location manager modal */
   const closeLocationManager = () => {
     setLocationMgrVisible(false);
     
-    // Check if we need to reopen item modal with draft
+    // Check if we need to restore item modal
     if (shouldReopenItemModal && itemDraft) {
       setTimeout(() => {
-        // Reset fields with draft data
+        // Restore item modal visibility
+        setItemModalTemporarilyHidden(false);
+        
+        // Update fields with any changes from draft
         setNewTitle(itemDraft.title);
         setNewQuantity(itemDraft.quantity);
         setNewLocation(itemDraft.location);
         setNewDescription(itemDraft.description);
         setNewImages(itemDraft.images);
         
-        // Reopen item modal
-        setModalVisible(true);
-        
-        // Reset flag and draft
+        // Clear flags
         setShouldReopenItemModal(false);
         setItemDraft(null);
-      }, 300);
+      }, 100);
     } else {
       // If no draft, just reset flags
       setShouldReopenItemModal(false);
       setItemDraft(null);
+      setItemModalTemporarilyHidden(false);
     }
+    
+    // Reset context
+    setLocationMgrOpenedFrom('button');
   };
 
   /* Open location manager modal */
@@ -903,19 +910,22 @@ function AppInner() {
       quantity: newQuantity,
       location: newLocation,
       description: newDescription,
-      images: newImages.slice(), // Add a copy of images array
+      images: newImages.slice(),
     });
     
     // Set flag to reopen item modal later
     setShouldReopenItemModal(true);
     
-    // Close item modal
-    setModalVisible(false);
+    // Set context - opened from item modal
+    setLocationMgrOpenedFrom('itemModal');
+    
+    // Hide item modal temporarily instead of closing it
+    setItemModalTemporarilyHidden(true);
     
     // Open location manager after a short delay
     setTimeout(() => {
-      openLocationManager();
-    }, 300);
+      setLocationMgrVisible(true);
+    }, 100);
   };
 
   /* Add a new location in location manager */
@@ -1044,6 +1054,10 @@ function AppInner() {
     setNewLocationNameInMgr('');
     setEditingLocationInMgr(null);
     setEditingLocationNewNameInMgr('');
+    
+    // Set context - opened from button
+    setLocationMgrOpenedFrom('button');
+    
     setLocationMgrVisible(true);
   };
 
@@ -1290,31 +1304,34 @@ function AppInner() {
       </View>
 
       {/* Location Manager Modal */}
-      <LocationManagerModal
-        visible={locationMgrVisible}
-        onClose={closeLocationManager}
-        locations={locations}
-        items={items}
-        addingLocationInMgr={addingLocationInMgr}
-        setAddingLocationInMgr={setAddingLocationInMgr}
-        newLocationNameInMgr={newLocationNameInMgr}
-        setNewLocationNameInMgr={setNewLocationNameInMgr}
-        addLocationInMgr={addLocationInMgr}
-        editingLocationInMgr={editingLocationInMgr}
-        setEditingLocationInMgr={setEditingLocationInMgr}
-        editingLocationNewNameInMgr={editingLocationNewNameInMgr}
-        setEditingLocationNewNameInMgr={setEditingLocationNewNameInMgr}
-        confirmRenameLocationInMgr={confirmRenameLocationInMgr}
-        confirmAndDeleteLocation={confirmAndDeleteLocation}
-        selectedLocationForMgr={selectedLocationForMgr}
-        setSelectedLocationForMgr={setSelectedLocationForMgr}
-        mgrSelectedItemIds={mgrSelectedItemIds}
-        setMgrSelectedItemIds={setMgrSelectedItemIds}
-        toggleMgrSelectItem={toggleMgrSelectItem}
-        mgrTargetLocation={mgrTargetLocation}
-        setMgrTargetLocation={setMgrTargetLocation}
-        reassignMgrItems={reassignMgrItems}
-      />
+      {locationMgrOpenedFrom === 'button' && (
+        <LocationManagerModal
+          visible={locationMgrVisible}
+          onClose={closeLocationManager}
+          locations={locations}
+          items={items}
+          openedFrom={locationMgrOpenedFrom}
+          addingLocationInMgr={addingLocationInMgr}
+          setAddingLocationInMgr={setAddingLocationInMgr}
+          newLocationNameInMgr={newLocationNameInMgr}
+          setNewLocationNameInMgr={setNewLocationNameInMgr}
+          addLocationInMgr={addLocationInMgr}
+          editingLocationInMgr={editingLocationInMgr}
+          setEditingLocationInMgr={setEditingLocationInMgr}
+          editingLocationNewNameInMgr={editingLocationNewNameInMgr}
+          setEditingLocationNewNameInMgr={setEditingLocationNewNameInMgr}
+          confirmRenameLocationInMgr={confirmRenameLocationInMgr}
+          confirmAndDeleteLocation={confirmAndDeleteLocation}
+          selectedLocationForMgr={selectedLocationForMgr}
+          setSelectedLocationForMgr={setSelectedLocationForMgr}
+          mgrSelectedItemIds={mgrSelectedItemIds}
+          setMgrSelectedItemIds={setMgrSelectedItemIds}
+          toggleMgrSelectItem={toggleMgrSelectItem}
+          mgrTargetLocation={mgrTargetLocation}
+          setMgrTargetLocation={setMgrTargetLocation}
+          reassignMgrItems={reassignMgrItems}
+        />
+      )}
 
       {/* Settings Modal */}
       <SettingsModal
@@ -1375,6 +1392,36 @@ function AppInner() {
         confirmAndRemoveImage={confirmAndRemoveImage}
         showImageDebugActions={showImageDebugActions}
         onGoToLocationManager={saveDraftAndOpenLocationManager}
+        locationManagerContent={
+          locationMgrOpenedFrom === 'itemModal' ? (
+            <LocationManagerModal
+              visible={locationMgrVisible}
+              onClose={closeLocationManager}
+              locations={locations}
+              items={items}
+              openedFrom={locationMgrOpenedFrom}
+              addingLocationInMgr={addingLocationInMgr}
+              setAddingLocationInMgr={setAddingLocationInMgr}
+              newLocationNameInMgr={newLocationNameInMgr}
+              setNewLocationNameInMgr={setNewLocationNameInMgr}
+              addLocationInMgr={addLocationInMgr}
+              editingLocationInMgr={editingLocationInMgr}
+              setEditingLocationInMgr={setEditingLocationInMgr}
+              editingLocationNewNameInMgr={editingLocationNewNameInMgr}
+              setEditingLocationNewNameInMgr={setEditingLocationNewNameInMgr}
+              confirmRenameLocationInMgr={confirmRenameLocationInMgr}
+              confirmAndDeleteLocation={confirmAndDeleteLocation}
+              selectedLocationForMgr={selectedLocationForMgr}
+              setSelectedLocationForMgr={setSelectedLocationForMgr}
+              mgrSelectedItemIds={mgrSelectedItemIds}
+              setMgrSelectedItemIds={setMgrSelectedItemIds}
+              toggleMgrSelectItem={toggleMgrSelectItem}
+              mgrTargetLocation={mgrTargetLocation}
+              setMgrTargetLocation={setMgrTargetLocation}
+              reassignMgrItems={reassignMgrItems}
+            />
+          ) : null
+        }
       />
     </View>
   );

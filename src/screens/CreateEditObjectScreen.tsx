@@ -79,6 +79,7 @@ interface ItemEditorModalProps {
   confirmAndRemoveImage: (uri: string) => void;
   showImageDebugActions: (uri: string) => void;
   onGoToLocationManager: () => void;
+  locationManagerContent?: React.ReactNode
 }
 
 // ============================================
@@ -156,7 +157,8 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   openImagePicker,
   confirmAndRemoveImage,
   showImageDebugActions,
-  onGoToLocationManager
+  onGoToLocationManager,
+  locationManagerContent
 }) => {
   // Using ThemeContext
   const { themePreference, systemScheme } = useTheme();
@@ -716,6 +718,7 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
             )}
           </ScrollView>
         </KeyboardAvoidingView>
+        {locationManagerContent}
       </SafeAreaView>
     </Modal>
   );
