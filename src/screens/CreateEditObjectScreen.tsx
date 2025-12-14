@@ -166,6 +166,14 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   // Local state for UI
   const [locationDropdownVisible, setLocationDropdownVisible] = useState(false);
   const [imageToView, setImageToView] = useState<string | null>(null);
+
+  // Seearch query for location filtering
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+
+  // Filtered locations based on search query
+  const filteredLocations = locations.filter(loc => 
+    loc.toLowerCase().includes(locationSearchQuery.toLowerCase())
+  );
   
   // Check if dark mode is active
   const isDarkMode = themePreference === 'auto' 
@@ -430,7 +438,7 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
               />
             </View>
 
-            {/* Adjustment Section (edit only) */}
+            {/* Adjustment Section */}
             {editingItem && (
               <View style={dynamicStyles.formCard}>
                 <Text style={dynamicStyles.formSectionTitle}>Modifica Quantità</Text>
@@ -515,56 +523,97 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
 
               {locationDropdownVisible && (
                 <View style={dynamicStyles.dropdownListLarge}>
-                  <ScrollView style={{ maxHeight: 150 }}>
-                    {locations.length === 0 ? (
-                      <View style={{ padding: 16 }}>
-                        <Text style={{ 
-                          fontStyle: 'italic', 
-                          color: theme.textSecondary,
-                          marginBottom: 12,
-                          textAlign: 'center'
-                        }}>
-                          Nessuna ubicazione disponibile
-                        </Text>
-                        <TouchableOpacity
+                  {locations.length > 0 && (
+                    <>
+                      {/* Barra di ricerca */}
+                      <View style={{ 
+                        padding: 12, 
+                        borderBottomWidth: 1, 
+                        borderBottomColor: theme.borderLight 
+                      }}>
+                        <TextInput
+                          placeholder="Cerca ubicazione..."
+                          placeholderTextColor={theme.placeholder}
+                          value={locationSearchQuery}
+                          onChangeText={setLocationSearchQuery}
                           style={{
-                            backgroundColor: theme.primary,
-                            paddingVertical: 12,
-                            paddingHorizontal: 16,
+                            backgroundColor: theme.inputBg,
+                            borderWidth: 1,
+                            borderColor: theme.inputBorder,
                             borderRadius: 8,
-                            alignItems: 'center'
+                            padding: 10,
+                            fontSize: 14,
+                            color: theme.text,
                           }}
-                          onPress={onGoToLocationManager}
-                        >
-                          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>
-                            📍 Gestisci Ubicazioni
-                          </Text>
-                        </TouchableOpacity>
+                        />
                       </View>
-                    ) : (
-                      locations.map(loc => (
-                        <TouchableOpacity 
-                          key={loc} 
-                          style={[
-                            dynamicStyles.dropdownItemLarge,
-                            newLocation === loc && dynamicStyles.dropdownItemSelectedLarge
-                          ]} 
-                          onPress={() => {
-                            setNewLocation(loc);
-                            setLocationDropdownVisible(false);
-                          }}
-                        >
-                          <Text style={{ 
-                            color: newLocation === loc ? theme.primary : theme.text,
-                            fontWeight: newLocation === loc ? '600' : 'normal',
-                            fontSize: 15
-                          }}>
-                            {loc}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </ScrollView>
+
+                      {/* Lista ubicazioni scrollabile */}
+                      <ScrollView style={{ maxHeight: 150 }}>
+                        {filteredLocations.length === 0 ? (
+                          <View style={{ padding: 16 }}>
+                            <Text style={{ 
+                              fontStyle: 'italic', 
+                              color: theme.textSecondary,
+                              textAlign: 'center'
+                            }}>
+                              Nessuna ubicazione trovata
+                            </Text>
+                          </View>
+                        ) : (
+                          filteredLocations.map(loc => (
+                            <TouchableOpacity 
+                              key={loc} 
+                              style={[
+                                dynamicStyles.dropdownItemLarge,
+                                newLocation === loc && dynamicStyles.dropdownItemSelectedLarge
+                              ]} 
+                              onPress={() => {
+                                setNewLocation(loc);
+                                setLocationDropdownVisible(false);
+                                setLocationSearchQuery(''); // Reset search
+                              }}
+                            >
+                              <Text style={{ 
+                                color: newLocation === loc ? theme.primary : theme.text,
+                                fontWeight: newLocation === loc ? '600' : 'normal',
+                                fontSize: 15
+                              }}>
+                                {loc}
+                              </Text>
+                            </TouchableOpacity>
+                          ))
+                        )}
+                      </ScrollView>
+                    </>
+                  )}
+
+                  {/* Pulsante "Gestisci Ubicazioni" sempre visibile in basso */}
+                  <View style={{ 
+                    borderTopWidth: 2, 
+                    borderTopColor: theme.border,
+                    backgroundColor: theme.dropdownBg,
+                  }}>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: theme.primary,
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        margin: 12,
+                        borderRadius: 8,
+                        alignItems: 'center'
+                      }}
+                      onPress={() => {
+                        setLocationDropdownVisible(false);
+                        setLocationSearchQuery(''); // Reset search
+                        onGoToLocationManager();
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>
+                        📍 Gestisci Ubicazioni
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             </View>
