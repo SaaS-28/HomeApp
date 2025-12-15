@@ -74,7 +74,6 @@ interface ItemEditorModalProps {
   confirmAndSaveItem: () => void;
   confirmCancel: () => void;
   confirmAndDeleteItem: (id: string) => void;
-  resetModal: () => void;
   openImagePicker: () => void;
   confirmAndRemoveImage: (uri: string) => void;
   showImageDebugActions: (uri: string) => void;
@@ -153,7 +152,6 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
   confirmAndSaveItem,
   confirmCancel,
   confirmAndDeleteItem,
-  resetModal,
   openImagePicker,
   confirmAndRemoveImage,
   showImageDebugActions,
@@ -549,7 +547,11 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                       </View>
 
                       {/* Lista ubicazioni scrollabile */}
-                      <ScrollView style={{ maxHeight: 150 }}>
+                      <ScrollView 
+                        style={{ maxHeight: 150 }}
+                        nestedScrollEnabled={true}
+                        keyboardShouldPersistTaps="handled"
+                      >
                         {filteredLocations.length === 0 ? (
                           <View style={{ padding: 16 }}>
                             <Text style={{ 
@@ -573,6 +575,7 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                                 setLocationDropdownVisible(false);
                                 setLocationSearchQuery(''); // Reset search
                               }}
+                              activeOpacity={0.7}
                             >
                               <Text style={{ 
                                 color: newLocation === loc ? theme.primary : theme.text,
@@ -734,7 +737,7 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                   
                   <TouchableOpacity 
                     style={dynamicStyles.secondaryButton}
-                    onPress={resetModal}
+                    onPress={confirmCancel}
                     activeOpacity={0.85}
                   >
                     <Text style={dynamicStyles.secondaryButtonText}>Annulla</Text>

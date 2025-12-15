@@ -5,7 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -22,6 +21,7 @@
         "backgroundColor": "#ffffff",
         "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
       },
+      "userInterfaceStyle": "automatic",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },

@@ -679,9 +679,20 @@ function AppInner() {
 
   /* Check for unsaved changes in modal */
   const hasUnsavedChanges = () => {
-    if (!originalSnapshot) return false; // If no snapshot, no changes to track
+    // Se siamo in creazione (non editing), controlla se c'è almeno un campo compilato
+    if (!editingItem) {
+      return (
+        newTitle.trim() !== '' ||
+        newQuantity.trim() !== '' ||
+        newDescription.trim() !== '' ||
+        newLocation.trim() !== '' ||
+        newImages.length > 0
+      );
+    }
 
-    // Compare current state with original snapshot
+    // Se siamo in modifica, confronta con lo snapshot originale
+    if (!originalSnapshot) return false;
+
     const changed = (
       newTitle !== originalSnapshot.title ||
       newQuantity !== originalSnapshot.quantity ||
@@ -758,7 +769,7 @@ function AppInner() {
           `Esiste già un oggetto "${newTitle}" in "${target.location}" (qta: ${target.quantity}). Vuoi aggregare la quantità a quello esistente o creare comunque un nuovo oggetto in "${newLocation}"?`,
           [
             { text: 'Annulla', style: 'cancel' },
-            { text: `Aggrega a ${target.location}`, onPress: async () => {
+            { text: `Aggrega a "${target.location}"`, onPress: async () => {
                 // Aggregate quantity to existing item
                 const updated = items.map(i => i.id === target.id ? { ...i, quantity: i.quantity + parseInt(newQuantity) } : i);
                 await saveItems(updated);
@@ -1387,7 +1398,6 @@ function AppInner() {
         confirmAndSaveItem={confirmAndSaveItem}
         confirmCancel={confirmCancel}
         confirmAndDeleteItem={confirmAndDeleteItem}
-        resetModal={resetModal}
         openImagePicker={openImagePicker}
         confirmAndRemoveImage={confirmAndRemoveImage}
         showImageDebugActions={showImageDebugActions}
