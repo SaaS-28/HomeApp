@@ -586,39 +586,98 @@ function AppInner() {
     }
   };
 
-  /* Delete all data: inventory, locations, images */
+/* Delete all data: inventory, locations, images */
   const deleteAllData = async () => {
     Alert.alert(
-      'Elimina tutto',
-      'Sei sicuro di voler eliminare TUTTI gli oggetti, le immagini e le ubicazioni? Questa azione non può essere annullata.',
+      'Elimina dati',
+      'Cosa vuoi eliminare?',
       [
         { text: 'Annulla', style: 'cancel' },
         {
-          text: 'Elimina tutto',
+          text: 'Solo Oggetti',
+          style: 'destructive',
+          onPress: () => confirmDeleteData('objects')
+        },
+        {
+          text: 'Solo Ubicazioni',
+          style: 'destructive',
+          onPress: () => confirmDeleteData('locations')
+        },
+        {
+          text: 'Tutto (Oggetti + Ubicazioni)',
+          style: 'destructive',
+          onPress: () => confirmDeleteData('all')
+        }
+      ]
+    );
+  };
+
+  /* Confirm and execute data deletion based on selection */
+  const confirmDeleteData = async (type: 'objects' | 'locations' | 'all') => {
+    let message = '';
+    if (type === 'objects') {
+      message = 'Sei sicuro di voler eliminare TUTTI gli oggetti e le relative immagini? Le ubicazioni rimarranno salvate.';
+    } else if (type === 'locations') {
+      const hasItems = items.length > 0;
+      if (hasItems) {
+        Alert.alert(
+          'Impossibile eliminare',
+          'Non puoi eliminare le ubicazioni finché ci sono oggetti nell\'inventario. Elimina prima gli oggetti.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      message = 'Sei sicuro di voler eliminare TUTTE le ubicazioni?';
+    } else {
+      message = 'Sei sicuro di voler eliminare TUTTI gli oggetti, le immagini e le ubicazioni? Questa azione non può essere annullata.';
+    }
+
+    Alert.alert(
+      'Conferma eliminazione',
+      message,
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Elimina',
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear AsyncStorage entries
-              await AsyncStorage.setItem('inventory', JSON.stringify([]));
-              await AsyncStorage.setItem('locations', JSON.stringify([]));
-              
-              // Delete images directory
-              const baseDir: string = (FileSystem as any).documentDirectory || '';
-              const imagesDir = `${baseDir}images/`;
-              try {
-                const dirInfo = await FileSystem.getInfoAsync(imagesDir);
-                if (dirInfo.exists) {
-                  await FileSystem.deleteAsync(imagesDir, { idempotent: true });
+              if (type === 'objects' || type === 'all') {
+                // Clear inventory
+                await AsyncStorage.setItem('inventory', JSON.stringify([]));
+                
+                // Delete images directory
+                const baseDir: string = (FileSystem as any).documentDirectory || '';
+                const imagesDir = `${baseDir}images/`;
+                try {
+                  const dirInfo = await FileSystem.getInfoAsync(imagesDir);
+                  if (dirInfo.exists) {
+                    await FileSystem.deleteAsync(imagesDir, { idempotent: true });
+                  }
+                } catch (e) {
+                  console.warn('Could not delete images directory:', e);
                 }
-              } catch (e) {
-                console.warn('Could not delete images directory:', e);
+              }
+
+              if (type === 'locations' || type === 'all') {
+                // Clear locations
+                await AsyncStorage.setItem('locations', JSON.stringify([]));
               }
               
               // Reload state
               await loadItems();
               await loadLocations();
               
-              Alert.alert('Eliminazione completata', 'Tutti gli oggetti, le immagini e le ubicazioni sono stati eliminati.');
+              let successMessage = '';
+              if (type === 'objects') {
+                successMessage = 'Tutti gli oggetti e le relative immagini sono stati eliminati.';
+              } else if (type === 'locations') {
+                successMessage = 'Tutte le ubicazioni sono state eliminate.';
+              } else {
+                successMessage = 'Tutti gli oggetti, le immagini e le ubicazioni sono stati eliminati.';
+              }
+              
+              Alert.alert('Eliminazione completata', successMessage);
             } catch (e) {
               console.error('deleteAllData error:', e);
               Alert.alert('Errore', 'Impossibile eliminare i dati.');
@@ -734,7 +793,64 @@ function AppInner() {
     if (!locations.includes(newLocation)) { await saveLocations([...locations, newLocation]); }
 
     // If editing, update the item
+    // If editing, update the item
     if (editingItem) {
+      // Check if location has changed
+      const locationChanged = newLocation !== editingItem.location;
+      
+      if (locationChanged) {
+        // Check for duplicates in the new location (excluding the current item)
+        const titleLower = newTitle.trim().toLowerCase();
+        const duplicatesInNewLocation = items.filter(i => 
+          i.title.trim().toLowerCase() === titleLower && 
+          i.location === newLocation && 
+          i.id !== editingItem.id
+        );
+        
+        // If duplicates exist in the new location, ask user what to do
+        if (duplicatesInNewLocation.length > 0) {
+          const target = duplicatesInNewLocation[0];
+          Alert.alert(
+            'Oggetto già presente nell\'ubicazione',
+            `Esiste già un oggetto "${newTitle}" in "${newLocation}" (qta: ${target.quantity}). Cosa vuoi fare?`,
+            [
+              { text: 'Annulla', style: 'cancel' },
+              { 
+                text: `Aggrega a quello esistente`, 
+                onPress: async () => {
+                  // Aggregate quantity to existing item and delete the edited item
+                  const updated = items.map(i => 
+                    i.id === target.id 
+                      ? { ...i, quantity: i.quantity + parseInt(newQuantity) } 
+                      : i
+                  ).filter(i => i.id !== editingItem.id);
+                  
+                  await saveItems(updated);
+                  Alert.alert('Quantità aggregata', `La quantità è stata aggiunta all'oggetto esistente in "${newLocation}". L'oggetto originale è stato rimosso.`);
+                  resetModal();
+                }
+              },
+              { 
+                text: `Lascia comunque in "${newLocation}"`, 
+                onPress: async () => {
+                  // Move the item to the new location, creating a duplicate
+                  const updatedItems = items.map(i => 
+                    i.id === editingItem.id 
+                      ? { ...i, title: newTitle, quantity: parseInt(newQuantity), location: newLocation, description: newDescription, images: newImages } 
+                      : i
+                  );
+                  await saveItems(updatedItems);
+                  Alert.alert('Salvataggio Modifiche', `Oggetto spostato in "${newLocation}".`);
+                  resetModal();
+                }
+              }
+            ]
+          );
+          return;
+        }
+      }
+      
+      // No location change or no duplicates in new location - proceed with normal update
       const updatedItems = items.map(i => i.id === editingItem.id ? { ...i, title: newTitle, quantity: parseInt(newQuantity), location: newLocation, description: newDescription, images: newImages } : i);
       await saveItems(updatedItems);
       Alert.alert('Salvataggio Modifiche', 'Modifiche salvate con successo.');
@@ -800,11 +916,39 @@ function AppInner() {
 
       // Multiple duplicates found, open duplicate picker
       if (duplicatesAnyLocation.length > 1) {
-        setDuplicateCandidates(duplicatesAnyLocation); // Set candidates for duplicate selection
-        setDuplicateContextNewQuantity(parseInt(newQuantity)); // Set new quantity for context
-        setDuplicateContextMode('create'); // Set context mode to 'create'
-        setModalVisible(false);
-        setTimeout(() => setDuplicatePickerVisible(true), 200);
+        Alert.alert(
+          'Oggetti già presenti',
+          `Esistono già ${duplicatesAnyLocation.length} oggetti "${newTitle}" in diverse ubicazioni. Vuoi aggiungere la quantità a uno di questi o creare comunque un nuovo oggetto in "${newLocation}"?`,
+          [
+            { text: 'Annulla', style: 'cancel' },
+            { 
+              text: 'Scegli dove aggregare', 
+              onPress: () => {
+                setDuplicateCandidates(duplicatesAnyLocation);
+                setDuplicateContextNewQuantity(parseInt(newQuantity));
+                setDuplicateContextMode('create');
+                setModalVisible(false);
+                setTimeout(() => setDuplicatePickerVisible(true), 200);
+              }
+            },
+            { 
+              text: `Crea comunque in "${newLocation}"`,
+              onPress: async () => {
+                const newItem: InventoryItem = {
+                  id: Date.now().toString(),
+                  title: newTitle,
+                  quantity: parseInt(newQuantity),
+                  location: newLocation,
+                  description: newDescription,
+                  images: newImages,
+                };
+                await saveItems([...items, newItem]);
+                Alert.alert('Creazione Oggetto', `Oggetto "${newItem.title}" creato con successo in "${newLocation}".`);
+                resetModal();
+              }
+            }
+          ]
+        );
         return;
       }
     }

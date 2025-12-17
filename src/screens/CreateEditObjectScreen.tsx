@@ -407,8 +407,12 @@ const ItemEditorModal: React.FC<ItemEditorModalProps> = ({
                 placeholder="Titolo" 
                 value={newTitle} 
                 onChangeText={setNewTitle} 
-                style={dynamicStyles.formInput} 
+                style={[
+                  dynamicStyles.formInput,
+                  editingItem && { opacity: 0.6, backgroundColor: theme.borderLight }
+                ]} 
                 placeholderTextColor={theme.placeholder}
+                editable={!editingItem}
               />
               
               <TextInput 
